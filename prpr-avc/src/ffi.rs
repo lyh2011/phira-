@@ -3,6 +3,7 @@
 use std::ffi::c_void;
 
 pub const AV_CH_LAYOUT_STEREO: u64 = 3;
+pub const AV_CH_LAYOUT_MONO: u64 = 4;
 
 pub const AV_SAMPLE_FMT_FLT: AVSampleFormat = 3;
 
@@ -29,6 +30,7 @@ extern "C" {
     pub fn av_frame_free(frame: *mut *mut AVFrame);
     pub fn av_frame_get_buffer(frame: *mut AVFrame, align: ::std::os::raw::c_int) -> ::std::os::raw::c_int;
     pub fn av_rescale_rnd(a: i64, b: i64, c: i64, r: AVRounding) -> i64;
+    pub fn av_opt_set_int(obj: *mut ::std::os::raw::c_void, name: *const ::std::os::raw::c_char, val: i64, search_flags: ::std::os::raw::c_int) -> ::std::os::raw::c_int;
 }
 
 #[link(name = "avcodec", kind = "static")]

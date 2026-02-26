@@ -25,39 +25,11 @@ use sasa::{AudioClip, Frame};
 
 const AUDIO_DECODING_SAMPLE_RATE: i32 = 44100;
 
-#[repr(transparent)]
-struct OwnedPtr<T>(pub *mut T);
-impl<T> OwnedPtr<T> {
-    pub fn new(ptr: *mut T) -> Option<Self> {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(Self(ptr))
-        }
-    }
-
-    pub unsafe fn as_ref(&self) -> &T {
-        &*self.0
-    }
-
-    pub unsafe fn as_mut(&mut self) -> &mut T {
-        &mut *self.0
-    }
-
-    pub fn as_self_mut(&mut self) -> *mut *mut T {
-        &mut self.0
-    }
-}
-
-fn handle(code: ::std::os::raw::c_int) -> Result<()> {
-    if code == 0 {
-        Ok(())
-    } else {
-        Err(Error::from_error_code(code))
-    }
-}
-
 pub fn demux_audio(file: impl AsRef<str>) -> Result<Option<AudioClip>> {
+    demux_audio_with_options(file, false)
+}
+
+pub fn demux_audio_with_options(file: impl AsRef<str>, no_compress: bool) -> Result<Option<AudioClip>> {
     let mut format_ctx = AVFormatContext::new()?;
     format_ctx.open_input(file.as_ref())?;
     format_ctx.find_stream_info()?;
@@ -76,13 +48,34 @@ pub fn demux_audio(file: impl AsRef<str>) -> Result<Option<AudioClip>> {
         sample_fmt: params.sample_format(),
         sample_rate: params.sample_rate(),
     };
-    let out_format = AudioStreamFormat {
-        channel_layout: ffi::AV_CH_LAYOUT_STEREO,
-        channels: 2,
-        sample_fmt: ffi::AV_SAMPLE_FMT_FLT,
-        sample_rate: AUDIO_DECODING_SAMPLE_RATE,
+    
+    // 如果启用了不压缩选项，尽可能保留原始格式
+    let (target_sample_rate, target_channels, target_channel_layout) = if no_compress {
+        // 保留原始采样率和声道配置
+        let channels = if params.channels() == 0 { 2 } else { params.channels() };
+        let channel_layout = if params.channel_layout() == 0 {
+            if channels == 1 { ffi::AV_CH_LAYOUT_MONO } else { ffi::AV_CH_LAYOUT_STEREO }
+        } else {
+            params.channel_layout()
+        };
+        (params.sample_rate(), channels, channel_layout)
+    } else {
+        (AUDIO_DECODING_SAMPLE_RATE, 2, ffi::AV_CH_LAYOUT_STEREO)
     };
-    let mut swr = SwrContext::new(&in_format, &out_format)?;
+    
+    let out_format = AudioStreamFormat {
+        channel_layout: target_channel_layout,
+        channels: target_channels,
+        sample_fmt: ffi::AV_SAMPLE_FMT_FLT,
+        sample_rate: target_sample_rate,
+    };
+    
+    // 根据是否启用不压缩选项，选择不同质量的重采样器
+    let mut swr = if no_compress {
+        SwrContext::new_high_quality(&in_format, &out_format)?
+    } else {
+        SwrContext::new(&in_format, &out_format)?
+    };
     swr.init()?;
 
     let mut in_frame = AVFrame::new()?;
@@ -97,7 +90,7 @@ pub fn demux_audio(file: impl AsRef<str>) -> Result<Option<AudioClip>> {
                 let out_samples = unsafe {
                     ffi::av_rescale_rnd(
                         swr.get_delay(in_format.sample_rate) + in_frame.number_of_samples() as i64,
-                        AUDIO_DECODING_SAMPLE_RATE as _,
+                        target_sample_rate as _,
                         in_format.sample_rate as _,
                         ffi::AV_ROUND_UP,
                     )
@@ -115,5 +108,5 @@ pub fn demux_audio(file: impl AsRef<str>) -> Result<Option<AudioClip>> {
         }
     }
 
-    Ok(Some(AudioClip::from_raw(frames, AUDIO_DECODING_SAMPLE_RATE as _)))
+    Ok(Some(AudioClip::from_raw(frames, target_sample_rate as _)))
 }

@@ -625,9 +625,8 @@ impl GameScene {
                 ui.scope(|ui| {
                     ui.dx(0.3);
                     ui.dy(-0.3);
-                    ui.slider(tl!("speed"), 0.5..2.0, 0.05, &mut self.res.config.speed, Some(0.5));
-                    ui.dy(0.06);
-                    // AutoPlay开关
+                    
+                    // AutoPlay开关（移到最顶部）
                     let autoplay_enabled = self.res.config.autoplay();
                     let switch_text = if autoplay_enabled {
                         format!("{}: {}", tl!("autoplay"), tl!("autoplay-on"))
@@ -646,6 +645,9 @@ impl GameScene {
                             self.res.config.mods.toggle(Mods::AUTOPLAY);
                         }
                     }
+                    
+                    ui.dy(0.06);
+                    ui.slider(tl!("speed"), 0.5..2.0, 0.05, &mut self.res.config.speed, Some(0.5));
                 });
                 ui.dy(0.06);
                 let hw = 0.7;

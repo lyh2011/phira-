@@ -460,7 +460,38 @@ impl Resource {
         };
 
         let mut audio = create_audio_manger(&config)?;
-        let music = AudioClip::new(fs.load_file(&info.music).await?)?;
+        
+        // 尝试使用demux_audio_with_options来支持不压缩选项
+        let music = {
+            #[cfg(feature = "video")]
+            {
+                use crate::fs::ExternalFileSystem;
+                // 检查是否是ExternalFileSystem，如果是则可以获取文件路径
+                if let Some(ext_fs) = fs.as_any().downcast_ref::<ExternalFileSystem>() {
+                    // 获取实际文件路径
+                    if let Ok(file_path) = ext_fs.0.join(&info.music) {
+                        if let Ok(Some(clip)) = prpr_avc::demux_audio_with_options(
+                            file_path.to_str().unwrap(),
+                            config.has_mod(crate::config::Mods::NO_AUDIO_COMPRESS)
+                        ) {
+                            clip
+                        } else {
+                            // 如果demux失败，回退到直接加载
+                            AudioClip::new(fs.load_file(&info.music).await?)?
+                        }
+                    } else {
+                        AudioClip::new(fs.load_file(&info.music).await?)?
+                    }
+                } else {
+                    // 对于其他文件系统（如ZipFileSystem），使用原来的方法
+                    AudioClip::new(fs.load_file(&info.music).await?)?
+                }
+            }
+            #[cfg(not(feature = "video"))]
+            {
+                AudioClip::new(fs.load_file(&info.music).await?)?
+            }
+        };
         let track_length = music.length();
         let buffer_size = Some(BUFFER_SIZE);
         let sfx_click = audio.create_sfx(res_pack.sfx_click.clone(), buffer_size)?;

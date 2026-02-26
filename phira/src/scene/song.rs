@@ -1221,6 +1221,7 @@ impl SongScene {
             item(tl!("mods-autoplay"), Some(tl!("mods-autoplay-sub")), Mods::AUTOPLAY);
             item(tl!("mods-flip-x"), Some(tl!("mods-flip-x-sub")), Mods::FLIP_X);
             item(tl!("mods-fade-out"), Some(tl!("mods-fade-out-sub")), Mods::FADE_OUT);
+            item(tl!("mods-no-audio-compress"), Some(tl!("mods-no-audio-compress-sub")), Mods::NO_AUDIO_COMPRESS);
             (width, h)
         });
     }

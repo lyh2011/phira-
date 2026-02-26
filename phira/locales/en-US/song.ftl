@@ -105,6 +105,8 @@ mods-flip-x = Mirror
 mods-flip-x-sub = Mirrors the chart by the X-axis.
 mods-fade-out = Fade-Out
 mods-fade-out-sub = Makes notes fade out when they approach the judgeline.
+mods-no-audio-compress = No Audio Compression
+mods-no-audio-compress-sub = Disable audio compression for long tracks.
 
 rate-failed = Rate failed.
 rate-done = Rated successfully.
