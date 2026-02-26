@@ -1007,8 +1007,8 @@ impl Page for LibraryPage {
                 if chosen == ChartListType::Local {
                     if !self.current_folder.is_empty() {
                         // 在子文件夹中，显示所有按钮在一行（6个按钮）
-                        let btn_h = 0.07;
-                        let btn_w = 0.095;
+                        let btn_h = r.h; // 使用搜索框的高度
+                        let btn_w = btn_h; // 按钮宽度等于高度，保持正方形
                         let spacing = 0.006;
                         let start_x = r.right() - btn_w * 6.0 - spacing * 5.0;
                         
@@ -1019,7 +1019,10 @@ impl Page for LibraryPage {
                         self.back_btn.render_shadow(ui, btn_r, t, |ui, path| {
                             ui.fill_path(&path, semi_black(0.4));
                         });
-                        ui.text(tl!("back-to-parent")).pos(ct.x, ct.y).anchor(0.5, 0.5).no_baseline().size(0.35).draw();
+                        // 使用返回图标
+                        let icon_size = btn_h * 0.6;
+                        let icon_r = Rect::new(ct.x - icon_size / 2.0, ct.y - icon_size / 2.0, icon_size, icon_size);
+                        ui.fill_rect(icon_r, (*self.icons.back, icon_r, ScaleType::Fit));
                         
                         // 重命名按钮
                         btn_r.x += btn_w + spacing;
@@ -1027,7 +1030,10 @@ impl Page for LibraryPage {
                         self.rename_folder_btn.render_shadow(ui, btn_r, t, |ui, path| {
                             ui.fill_path(&path, semi_black(0.4));
                         });
-                        ui.text(tl!("rename-folder")).pos(ct.x, ct.y).anchor(0.5, 0.5).no_baseline().size(0.35).draw();
+                        // 使用编辑图标
+                        let icon_size = btn_h * 0.6;
+                        let icon_r = Rect::new(ct.x - icon_size / 2.0, ct.y - icon_size / 2.0, icon_size, icon_size);
+                        ui.fill_rect(icon_r, (*self.icons.edit, icon_r, ScaleType::Fit));
                         
                         // 更改图标按钮
                         btn_r.x += btn_w + spacing;
@@ -1035,7 +1041,76 @@ impl Page for LibraryPage {
                         self.change_icon_btn.render_shadow(ui, btn_r, t, |ui, path| {
                             ui.fill_path(&path, semi_black(0.4));
                         });
-                        ui.text(tl!("change-icon")).pos(ct.x, ct.y).anchor(0.5, 0.5).no_baseline().size(0.35).draw();
+                        // 绘制图片图标（四个角的框 + 山和太阳）
+                        let icon_size = btn_h * 0.5;
+                        let corner_len = icon_size * 0.25; // 角的长度
+                        let line_width = icon_size * 0.08; // 线条宽度
+                        
+                        // 绘制四个角
+                        // 左上角
+                        ui.fill_rect(
+                            Rect::new(ct.x - icon_size / 2.0, ct.y - icon_size / 2.0, corner_len, line_width),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        ui.fill_rect(
+                            Rect::new(ct.x - icon_size / 2.0, ct.y - icon_size / 2.0, line_width, corner_len),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        
+                        // 右上角
+                        ui.fill_rect(
+                            Rect::new(ct.x + icon_size / 2.0 - corner_len, ct.y - icon_size / 2.0, corner_len, line_width),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        ui.fill_rect(
+                            Rect::new(ct.x + icon_size / 2.0 - line_width, ct.y - icon_size / 2.0, line_width, corner_len),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        
+                        // 左下角
+                        ui.fill_rect(
+                            Rect::new(ct.x - icon_size / 2.0, ct.y + icon_size / 2.0 - line_width, corner_len, line_width),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        ui.fill_rect(
+                            Rect::new(ct.x - icon_size / 2.0, ct.y + icon_size / 2.0 - corner_len, line_width, corner_len),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        
+                        // 右下角
+                        ui.fill_rect(
+                            Rect::new(ct.x + icon_size / 2.0 - corner_len, ct.y + icon_size / 2.0 - line_width, corner_len, line_width),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        ui.fill_rect(
+                            Rect::new(ct.x + icon_size / 2.0 - line_width, ct.y + icon_size / 2.0 - corner_len, line_width, corner_len),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        
+                        // 绘制太阳（右上角的小圆）
+                        let sun_size = icon_size * 0.12;
+                        ui.fill_circle(ct.x + icon_size * 0.15, ct.y - icon_size * 0.15, sun_size, Color::new(1.0, 1.0, 1.0, 1.0));
+                        
+                        // 绘制山（两个三角形）
+                        let mountain_height = icon_size * 0.2;
+                        let mountain_base = icon_size * 0.25;
+                        
+                        // 左边的山（较高）
+                        let m1_x = ct.x - icon_size * 0.15;
+                        let m1_y = ct.y + icon_size * 0.15;
+                        ui.fill_rect(
+                            Rect::new(m1_x - mountain_base / 2.0, m1_y - mountain_height, mountain_base, mountain_height),
+                            Color::new(1.0, 1.0, 1.0, 0.8)
+                        );
+                        
+                        // 右边的山（较矮）
+                        let m2_x = ct.x + icon_size * 0.1;
+                        let m2_y = ct.y + icon_size * 0.15;
+                        let m2_height = mountain_height * 0.7;
+                        ui.fill_rect(
+                            Rect::new(m2_x - mountain_base / 2.0, m2_y - m2_height, mountain_base * 0.8, m2_height),
+                            Color::new(1.0, 1.0, 1.0, 0.8)
+                        );
                         
                         // 删除按钮
                         btn_r.x += btn_w + spacing;
@@ -1043,7 +1118,10 @@ impl Page for LibraryPage {
                         self.delete_folder_btn.render_shadow(ui, btn_r, t, |ui, path| {
                             ui.fill_path(&path, semi_black(0.4));
                         });
-                        ui.text(tl!("delete-folder")).pos(ct.x, ct.y).anchor(0.5, 0.5).no_baseline().size(0.35).draw();
+                        // 使用删除图标
+                        let icon_size = btn_h * 0.6;
+                        let icon_r = Rect::new(ct.x - icon_size / 2.0, ct.y - icon_size / 2.0, icon_size, icon_size);
+                        ui.fill_rect(icon_r, (*self.icons.delete, icon_r, ScaleType::Fit));
                         
                         // 新建文件夹按钮
                         btn_r.x += btn_w + spacing;
@@ -1051,7 +1129,19 @@ impl Page for LibraryPage {
                         self.create_folder_btn.render_shadow(ui, btn_r, t, |ui, path| {
                             ui.fill_path(&path, semi_black(0.4));
                         });
-                        ui.text(tl!("new-folder")).pos(ct.x, ct.y).anchor(0.5, 0.5).no_baseline().size(0.35).draw();
+                        // 绘制加号图标
+                        let icon_size = btn_h * 0.5;
+                        let line_width = icon_size * 0.15;
+                        // 竖线
+                        ui.fill_rect(
+                            Rect::new(ct.x - line_width / 2.0, ct.y - icon_size / 2.0, line_width, icon_size),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        // 横线
+                        ui.fill_rect(
+                            Rect::new(ct.x - icon_size / 2.0, ct.y - line_width / 2.0, icon_size, line_width),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
                         
                         // 导入按钮
                         btn_r.x += btn_w + spacing;
@@ -1059,11 +1149,14 @@ impl Page for LibraryPage {
                         self.import_btn.render_shadow(ui, btn_r, t, |ui, path| {
                             ui.fill_path(&path, semi_black(0.4));
                         });
-                        ui.text(tl!("import")).pos(ct.x, ct.y).anchor(0.5, 0.5).no_baseline().size(0.35).draw();
+                        // 使用下载图标
+                        let icon_size = btn_h * 0.6;
+                        let icon_r = Rect::new(ct.x - icon_size / 2.0, ct.y - icon_size / 2.0, icon_size, icon_size);
+                        ui.fill_rect(icon_r, (*self.icons.download, icon_r, ScaleType::Fit));
                     } else {
                         // 在根目录，只显示导入和新建文件夹按钮
-                        let btn_h = 0.07;
-                        let btn_w = 0.14;
+                        let btn_h = r.h; // 使用搜索框的高度
+                        let btn_w = btn_h; // 按钮宽度等于高度，保持正方形
                         let spacing = 0.01;
                         
                         // 新建文件夹按钮
@@ -1072,7 +1165,19 @@ impl Page for LibraryPage {
                         self.create_folder_btn.render_shadow(ui, btn_r, t, |ui, path| {
                             ui.fill_path(&path, semi_black(0.4));
                         });
-                        ui.text(tl!("new-folder")).pos(ct.x, ct.y).anchor(0.5, 0.5).no_baseline().size(0.45).draw();
+                        // 绘制加号图标
+                        let icon_size = btn_h * 0.5;
+                        let line_width = icon_size * 0.15;
+                        // 竖线
+                        ui.fill_rect(
+                            Rect::new(ct.x - line_width / 2.0, ct.y - icon_size / 2.0, line_width, icon_size),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
+                        // 横线
+                        ui.fill_rect(
+                            Rect::new(ct.x - icon_size / 2.0, ct.y - line_width / 2.0, icon_size, line_width),
+                            Color::new(1.0, 1.0, 1.0, 1.0)
+                        );
                         
                         // 导入按钮
                         let btn_r = Rect::new(r.right() - btn_w, r.y, btn_w, btn_h);
@@ -1080,7 +1185,10 @@ impl Page for LibraryPage {
                         self.import_btn.render_shadow(ui, btn_r, t, |ui, path| {
                             ui.fill_path(&path, semi_black(0.4));
                         });
-                        ui.text(tl!("import")).pos(ct.x, ct.y).anchor(0.5, 0.5).no_baseline().size(0.45).draw();
+                        // 使用下载图标
+                        let icon_size = btn_h * 0.6;
+                        let icon_r = Rect::new(ct.x - icon_size / 2.0, ct.y - icon_size / 2.0, icon_size, icon_size);
+                        ui.fill_rect(icon_r, (*self.icons.download, icon_r, ScaleType::Fit));
                     }
                 } else {
                     self.order_btn.render_shadow(ui, r, t, |ui, path| {
