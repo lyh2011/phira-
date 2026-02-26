@@ -598,6 +598,7 @@ impl SongScene {
                             record: None,
                             mods: Mods::default(),
                             played_unlock: false,
+                            folder: None,
                         },
                         tuple,
                     ))

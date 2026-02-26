@@ -269,6 +269,9 @@ impl GameScene {
         let exercise_range = (chart.offset + info_offset + res.config.offset)..res.track_length;
 
         let judge = Judge::new(&chart);
+        
+        // 同步判定日志配置到全局变量
+        crate::judge::set_judge_log_enabled(res.config.enable_judge_log);
 
         let music = Self::new_music(&mut res)?;
         Ok(Self {
@@ -396,13 +399,39 @@ impl GameScene {
                         .size(0.8)
                         .color(c)
                         .draw_using(&PGR_FONT);
+                    let mut offset_y = h;
                     if res.config.show_acc {
                         ui.text(format!("{:05.2}%", self.judge.real_time_accuracy() * 100.))
-                            .pos(1. - margin, score_top + h)
+                            .pos(1. - margin, score_top + offset_y)
                             .anchor(1., 0.)
                             .size(0.4)
                             .color(Color { a: c.a * 0.7, ..c })
                             .draw_using(&PGR_FONT);
+                        offset_y += h * 0.6;
+                    }
+                    // 显示判定偏差
+                    if res.config.show_judge_offset {
+                        if let Some(offset) = *self.judge.last_judge_offset.borrow() {
+                            let offset_ms = offset * 1000.0;
+                            let offset_text = if offset_ms >= 0.0 {
+                                format!("+{:.0}ms", offset_ms)
+                            } else {
+                                format!("{:.0}ms", offset_ms)
+                            };
+                            let offset_color = if offset_ms.abs() <= 40.0 {
+                                Color::new(0.0, 1.0, 0.0, c.a * 0.8) // 绿色：很准
+                            } else if offset_ms.abs() <= 80.0 {
+                                Color::new(1.0, 1.0, 0.0, c.a * 0.8) // 黄色：还行
+                            } else {
+                                Color::new(1.0, 0.5, 0.0, c.a * 0.8) // 橙色：偏差较大
+                            };
+                            ui.text(offset_text)
+                                .pos(1. - margin, score_top + offset_y)
+                                .anchor(1., 0.)
+                                .size(0.35)
+                                .color(offset_color)
+                                .draw_using(&PGR_FONT);
+                        }
                     }
                 },
             );
@@ -597,6 +626,26 @@ impl GameScene {
                     ui.dx(0.3);
                     ui.dy(-0.3);
                     ui.slider(tl!("speed"), 0.5..2.0, 0.05, &mut self.res.config.speed, Some(0.5));
+                    ui.dy(0.06);
+                    // AutoPlay开关
+                    let autoplay_enabled = self.res.config.autoplay();
+                    let switch_text = if autoplay_enabled {
+                        format!("{}: {}", tl!("autoplay"), tl!("autoplay-on"))
+                    } else {
+                        format!("{}: {}", tl!("autoplay"), tl!("autoplay-off"))
+                    };
+                    let r = ui.text(&switch_text).pos(0., 0.).anchor(0.5, 0.).size(0.5).measure();
+                    let btn_rect = r.feather(0.02);
+                    ui.fill_rect(btn_rect, Color::new(1., 1., 1., if autoplay_enabled { 0.8 } else { 0.4 }));
+                    ui.text(&switch_text).pos(0., 0.).anchor(0.5, 0.).size(0.5).color(BLACK).draw();
+                    
+                    // 检测点击
+                    let global_rect = ui.rect_to_global(btn_rect);
+                    for touch in Judge::get_touches() {
+                        if touch.phase == TouchPhase::Started && global_rect.contains(touch.position) {
+                            self.res.config.mods.toggle(Mods::AUTOPLAY);
+                        }
+                    }
                 });
                 ui.dy(0.06);
                 let hw = 0.7;

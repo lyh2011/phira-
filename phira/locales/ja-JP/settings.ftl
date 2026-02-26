@@ -30,6 +30,12 @@ item-dhint = 多点タップサポート
 item-dhint-sub = 同時ノーツが強調表示されます
 item-opt = 最適化を優先
 item-opt-sub = パフォーマンスが向上しますが、動作が不安定になる可能性があります
+item-relaxed-judge = Phigros判定
+item-relaxed-judge-sub = 使用Phigros的判定窗口（±80ms）
+item-strict-judge = 严判模式
+item-strict-judge-sub = Perfect ±40ms, Good ±40~75ms（需要先启用Phigros判定）
+item-show-judge-offset = 判定オフセットを表示
+item-show-judge-offset-sub = スコアの下に最後の判定のタイミングオフセット（±ms）を表示
 item-speed = 速さ
 item-note-size = ノーツの大きさ
 

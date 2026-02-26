@@ -33,6 +33,12 @@ item-dhint = Double hint
 item-dhint-sub = Note-note yang perlu ditekan bersamaan akan bersinar.
 item-opt = Optimizasi agresif
 item-opt-sub = Meningkatkan performa, tapi akan mungkin merusak beberapa fungsi aplikasi
+item-relaxed-judge = Phigros判定
+item-relaxed-judge-sub = 使用Phigros的判定窗口（±80ms）
+item-strict-judge = 严判模式
+item-strict-judge-sub = Perfect ±40ms, Good ±40~75ms（需要先启用Phigros判定）
+item-show-judge-offset = Tampilkan Offset Penilaian
+item-show-judge-offset-sub = Tampilkan offset waktu (±ms) dari penilaian terakhir di bawah skor
 item-speed = Kecepatan
 item-note-size = Ukuran note
 

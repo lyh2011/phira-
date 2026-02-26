@@ -5,6 +5,9 @@ offset-cancel = 取消
 offset-reset = 重置
 offset-save = 保存
 speed = 速度
+autoplay = 自动游玩
+autoplay-on = 开启
+autoplay-off = 关闭
 
 ex-time-out-of-range = 时间不在范围内
 ex-invalid-format = 格式有误

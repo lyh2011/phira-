@@ -31,9 +31,20 @@ pub fn basic_client_builder() -> ClientBuilder {
         }
     });
     let mut builder = reqwest::ClientBuilder::new().redirect(policy);
-    if get_data().accept_invalid_cert {
+    
+    // 在 Android 上，rustls-platform-verifier 有问题，所以默认接受无效证书
+    #[cfg(target_os = "android")]
+    {
         builder = builder.danger_accept_invalid_certs(true);
     }
+    
+    #[cfg(not(target_os = "android"))]
+    {
+        if get_data().accept_invalid_cert {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+    }
+    
     builder
 }
 

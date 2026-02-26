@@ -32,6 +32,10 @@ item-enable-anys-sub = Use an Anys gateway to improve network stability.
 item-anys-gateway = Anys Gateway
 item-anys-gateway-sub = Use a custom Anys gateway address.
 item-anys-gateway-invalid = Invalid gateway address.
+item-custom-rks = Custom RKS
+item-custom-rks-sub = Use a custom RKS value instead of the real one
+item-custom-rks-value = RKS Value
+item-custom-rks-invalid = Invalid RKS value (should be between 0.0 and 20.0)
 
 item-adjust = Automatic Time Adjustment
 item-adjust-sub = Adjust the audio and chart offset dynamically.
@@ -47,6 +51,14 @@ item-dhint = Simultaneous Hint
 item-dhint-sub = Highlight notes that are meant to be hit at the same time.
 item-opt = Chart Optimization
 item-opt-sub = Significantly increase peformance while playing. (If unintended behavior arises, disable this.)
+item-relaxed-judge = Phigros判定
+item-relaxed-judge-sub = 使用Phigros的判定窗口（±80ms）
+item-strict-judge = 严判模式
+item-strict-judge-sub = Perfect ±40ms, Good ±40~75ms（需要先启用Phigros判定）
+item-show-judge-offset = Show Judge Offset
+item-show-judge-offset-sub = Display timing offset (±ms) of the last judgment below score
+item-enable-judge-log = Enable Judge Log
+item-enable-judge-log-sub = Record detailed judgment information to log file (for debugging)
 item-speed = Speed
 item-note-size = Note Size
 
@@ -66,6 +78,8 @@ about-content =
   QQ Guild: r48eajexth
   Discord Server: discord.gg/gqpR3bTSsP
   
+  Edited by lyh
+
   We recommend joining either the QQ guild or the Discord server to get live updates and recieve assistance.
   
   Thank you to all our sponsers! (Sorted lexicographically.)

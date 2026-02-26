@@ -52,6 +52,12 @@ pub struct Config {
     pub volume_music: f32,
     pub volume_sfx: f32,
     pub volume_bgm: f32,
+    pub relaxed_judge: bool,
+    pub strict_judge: bool,
+    pub show_judge_offset: bool,
+    pub enable_judge_log: bool,
+    pub custom_rks_enabled: bool,
+    pub custom_rks: f32,
 
     // for compatibility
     autoplay: Option<bool>,
@@ -90,6 +96,12 @@ impl Default for Config {
             volume_music: 1.,
             volume_sfx: 1.,
             volume_bgm: 1.,
+            relaxed_judge: false,
+            strict_judge: false,
+            show_judge_offset: false,
+            enable_judge_log: false,
+            custom_rks_enabled: false,
+            custom_rks: 15.0,
 
             autoplay: None,
         }
@@ -116,5 +128,14 @@ impl Config {
     #[inline]
     pub fn flip_x(&self) -> bool {
         self.has_mod(Mods::FLIP_X)
+    }
+
+    #[inline]
+    pub fn get_rks(&self) -> f32 {
+        if self.custom_rks_enabled {
+            self.custom_rks
+        } else {
+            self.player_rks
+        }
     }
 }

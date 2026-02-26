@@ -14,7 +14,21 @@ use once_cell::sync::Lazy;
 use sasa::{PlaySfxParams, Sfx};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, num::FpCategory};
-use tracing::debug;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tracing::{debug, info};
+
+// 全局变量：控制是否启用判定日志
+static ENABLE_JUDGE_LOG: AtomicBool = AtomicBool::new(false);
+
+// 设置判定日志开关
+pub fn set_judge_log_enabled(enabled: bool) {
+    ENABLE_JUDGE_LOG.store(enabled, Ordering::Relaxed);
+}
+
+// 获取判定日志开关状态
+pub fn is_judge_log_enabled() -> bool {
+    ENABLE_JUDGE_LOG.load(Ordering::Relaxed)
+}
 
 pub const FLICK_SPEED_THRESHOLD: f32 = 0.8;
 pub const LIMIT_PERFECT: f32 = 0.08;
@@ -23,7 +37,72 @@ pub const LIMIT_BAD: f32 = 0.22;
 pub const UP_TOLERANCE: f32 = 0.05;
 pub const DIST_FACTOR: f32 = 0.2;
 
+// Phigros judge mode constants (±80ms Perfect, ±160ms Good, ±180ms Bad)
+pub const LIMIT_PERFECT_RELAXED: f32 = 0.08;
+pub const LIMIT_GOOD_RELAXED: f32 = 0.16;
+pub const LIMIT_BAD_RELAXED: f32 = 0.18;
+
+// Phigros Flick判定窗口：perfectTimeRange × 1.75 = 0.08 × 1.75 = 0.14秒
+pub const LIMIT_FLICK_RELAXED: f32 = 0.14;
+
+// 严格判定 (±40ms Perfect, ±75ms Good, ±180ms Bad)
+pub const LIMIT_PERFECT_STRICT: f32 = 0.04;
+pub const LIMIT_GOOD_STRICT: f32 = 0.075;
+pub const LIMIT_BAD_STRICT: f32 = 0.18;
+
 const EARLY_OFFSET: f32 = 0.07;
+
+// 写入判定日志（输出到logcat）
+fn write_judge_log(message: &str) {
+    // 检查是否启用日志
+    if !is_judge_log_enabled() {
+        return;
+    }
+    
+    // 使用info!宏输出到logcat，标签为JUDGE
+    info!("[JUDGE] {}", message);
+}
+
+impl Judge {
+    #[inline]
+    fn get_limit_perfect(config: &Config) -> f32 {
+        if config.relaxed_judge {
+            if config.strict_judge {
+                LIMIT_PERFECT_STRICT
+            } else {
+                LIMIT_PERFECT_RELAXED
+            }
+        } else {
+            LIMIT_PERFECT
+        }
+    }
+
+    #[inline]
+    fn get_limit_good(config: &Config) -> f32 {
+        if config.relaxed_judge {
+            if config.strict_judge {
+                LIMIT_GOOD_STRICT
+            } else {
+                LIMIT_GOOD_RELAXED
+            }
+        } else {
+            LIMIT_GOOD
+        }
+    }
+
+    #[inline]
+    fn get_limit_bad(config: &Config) -> f32 {
+        if config.relaxed_judge {
+            if config.strict_judge {
+                LIMIT_BAD_STRICT
+            } else {
+                LIMIT_BAD_RELAXED
+            }
+        } else {
+            LIMIT_BAD
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum HitSound {
@@ -101,6 +180,8 @@ pub struct FlickTracker {
     last_time: f32,
     flicked: bool,
     stopped: bool,
+    judged_this_swipe: bool, // 记录这次滑动是否已经判定过（用于Phigros模式）
+    phigros_mode: bool, // 记录是否为Phigros模式
 }
 
 impl FlickTracker {
@@ -114,6 +195,8 @@ impl FlickTracker {
             last_time: time,
             flicked: false,
             stopped: true,
+            judged_this_swipe: false,
+            phigros_mode: false, // 默认false，会在update时设置
         }
     }
 
@@ -123,19 +206,36 @@ impl FlickTracker {
         if let Some(last_delta) = &self.last_delta {
             let dt = time - self.last_time;
             let speed = delta.dot(last_delta) / dt;
+            
+            // 检测方向是否改变（速度投影为负表示方向相反）
+            let direction_changed = speed < 0.;
+            
+            // 只在速度低于阈值时设置stopped = true
             if speed < self.threshold {
                 self.stopped = true;
             }
-            if self.stopped && !self.flicked {
-                self.flicked = delta.magnitude() / dt >= self.threshold * 2.;
+            
+            // 速度变慢或方向改变时，重置judged_this_swipe，允许下次滑动判定
+            if self.stopped || direction_changed {
+                if self.judged_this_swipe {
+                    // 记录重置事件
+                    let log_msg = format!(
+                        "TRACKER_RESET: judged_this_swipe reset | stopped={} | direction_changed={} | speed={:.2}",
+                        self.stopped, direction_changed, speed
+                    );
+                    write_judge_log(&log_msg);
+                }
+                self.judged_this_swipe = false;
             }
-            // if speed < self.threshold || self.stopped {
-            // self.stopped = delta.magnitude() / dt < self.threshold * 5.;
-            // self.flicked = self.threshold <= speed;
-            // if self.flicked {
-            // warn!("new flick!");
-            // }
-            // }
+            
+            // 只有在stopped状态且还没flicked时，才检测新的flick
+            // 在Phigros模式下，如果已经判定过这次滑动，就不再触发新的flick
+            if self.stopped && !self.flicked && (!self.phigros_mode || !self.judged_this_swipe) {
+                let is_flick = delta.magnitude() / dt >= self.threshold * 2.;
+                if is_flick {
+                    self.flicked = true;
+                }
+            }
         }
         self.last_delta = Some(delta.normalize());
         self.last_time = time;
@@ -272,6 +372,10 @@ pub struct Judge {
 
     pub(crate) inner: JudgeInner,
     pub judgements: RefCell<Vec<(f32, u32, u32, Result<Judgement, bool>)>>,
+    pub last_judge_offset: RefCell<Option<f32>>, // 最近一次判定的偏差（秒）
+    
+    // Drag保护：记录最近的drag判定信息 (时间, 判定线ID, x位置)
+    drag_history: RefCell<Vec<(f32, usize, f32)>>,
 }
 
 static SUBSCRIBER_ID: Lazy<usize> = Lazy::new(register_input_subscriber);
@@ -299,6 +403,8 @@ impl Judge {
 
             inner: JudgeInner::new(chart.lines.iter().map(|it| it.notes.iter().filter(|it| !it.fake).count() as u32).sum()),
             judgements: RefCell::new(Vec::new()),
+            last_judge_offset: RefCell::new(None),
+            drag_history: RefCell::new(Vec::new()),
         }
     }
 
@@ -306,12 +412,27 @@ impl Judge {
         self.notes.iter_mut().for_each(|it| it.1 = 0);
         self.trackers.clear();
         self.inner.reset();
+        *self.last_judge_offset.borrow_mut() = None;
         self.judgements.borrow_mut().clear();
     }
 
     pub fn commit(&mut self, t: f32, what: Judgement, line_id: u32, note_id: u32, diff: f32) {
+        let log_msg = format!(
+            "JUDGE_COMMIT: result={:?} | diff={:.1}ms | line_id={} | note_id={}",
+            what,
+            diff * 1000.0,
+            line_id,
+            note_id
+        );
+        info!("{}", log_msg);
+        write_judge_log(&log_msg);
+        
         self.judgements.borrow_mut().push((t, line_id, note_id, Ok(what)));
         self.inner.commit(what, diff);
+        // 记录最近的判定偏差（不包括 Miss）
+        if !matches!(what, Judgement::Miss) {
+            *self.last_judge_offset.borrow_mut() = Some(diff);
+        }
     }
 
     #[inline]
@@ -375,6 +496,11 @@ impl Judge {
         }
         const X_DIFF_MAX: f32 = 0.21 / (16. / 9.) * 2.;
         let spd = res.config.speed;
+
+        // Get judge limits based on mode
+        let limit_perfect = Self::get_limit_perfect(&res.config);
+        let limit_good = Self::get_limit_good(&res.config);
+        let limit_bad = Self::get_limit_bad(&res.config);
 
         let uptime = get_uptime();
 
@@ -442,6 +568,10 @@ impl Judge {
                 match phase {
                     TouchPhase::Started => {
                         self.trackers.insert(id, FlickTracker::new(res.dpi, t, p));
+                        // 设置Phigros模式标志
+                        if let Some(tracker) = self.trackers.get_mut(&id) {
+                            tracker.phigros_mode = res.config.relaxed_judge;
+                        }
                         touches
                             .entry(id)
                             .or_insert_with(|| Touch {
@@ -508,13 +638,16 @@ impl Judge {
         // clicks & flicks
         for (id, touch) in touches.iter().enumerate() {
             let click = touch.phase == TouchPhase::Started;
-            let flick =
-                matches!(touch.phase, TouchPhase::Moved | TouchPhase::Stationary) && self.trackers.get_mut(&touch.id).is_some_and(|it| it.flicked);
+            let flick = matches!(touch.phase, TouchPhase::Moved | TouchPhase::Stationary) 
+                && self.trackers.get_mut(&touch.id).is_some_and(|it| {
+                    // 在Phigros模式下，如果这次滑动已经判定过，就不再触发
+                    it.flicked && (!res.config.relaxed_judge || !it.judged_this_swipe)
+                });
             if !(click || flick) {
                 continue;
             }
             let t = time_of(touch);
-            let mut closest = (None, X_DIFF_MAX, LIMIT_BAD, LIMIT_BAD + (X_DIFF_MAX / NOTE_WIDTH_RATIO_BASE - 1.).max(0.) * DIST_FACTOR);
+            let mut closest = (None, X_DIFF_MAX, limit_bad, limit_bad + (X_DIFF_MAX / NOTE_WIDTH_RATIO_BASE - 1.).max(0.) * DIST_FACTOR);
             for (line_id, ((line, pos), (idx, st))) in chart.lines.iter_mut().zip(pos.iter()).zip(self.notes.iter_mut()).enumerate() {
                 let Some(pos) = pos[id] else {
                     continue;
@@ -531,7 +664,18 @@ impl Judge {
                     if dt >= closest.3 {
                         break;
                     }
-                    let dt = if dt < 0. { (dt + EARLY_OFFSET).min(0.).abs() } else { dt };
+                    // 在Phigros判定模式下不使用EARLY_OFFSET
+                    let dt = if dt < 0. {
+                        if res.config.relaxed_judge {
+                            // Phigros模式：不使用EARLY_OFFSET，直接取绝对值
+                            dt.abs()
+                        } else {
+                            // Phira原版：使用EARLY_OFFSET
+                            (dt + EARLY_OFFSET).min(0.).abs()
+                        }
+                    } else {
+                        dt
+                    };
                     let x = &mut note.object.translation.0;
                     x.set_time(t);
                     let dist = (x.now() - pos.x).abs();
@@ -540,15 +684,28 @@ impl Judge {
                     }
                     if dt
                         > if matches!(note.kind, NoteKind::Click) {
-                            LIMIT_BAD - LIMIT_PERFECT * (dist - 0.9).max(0.)
+                            // Drag保护：只在Phigros判定模式且非严格判定时启用
+                            if res.config.relaxed_judge && !res.config.strict_judge && dist > 0.9 {
+                                limit_bad - limit_perfect * (dist - 0.9) * 0.5
+                            } else {
+                                limit_bad
+                            }
                         } else {
-                            LIMIT_GOOD
+                            limit_good
                         }
                     {
                         continue;
                     }
                     let dt = if matches!(note.kind, NoteKind::Flick | NoteKind::Drag) {
-                        dt + LIMIT_GOOD
+                        // Flick和Drag使用特殊的判定窗口
+                        // Phigros模式：使用140ms窗口（perfectTimeRange × 1.75）
+                        // Phira模式：使用160ms窗口（limit_good）
+                        let flick_limit = if res.config.relaxed_judge {
+                            LIMIT_FLICK_RELAXED
+                        } else {
+                            limit_good
+                        };
+                        dt + flick_limit
                     } else {
                         dt
                     };
@@ -568,34 +725,135 @@ impl Judge {
                     // click & hold
                     let note = &mut line.notes[id as usize];
                     if matches!(note.kind, NoteKind::Flick) {
-                        continue; // to next loop
+                        continue;
                     }
-                    if dt <= LIMIT_GOOD || matches!(note.kind, NoteKind::Hold { .. }) {
+                    if dt <= limit_bad || matches!(note.kind, NoteKind::Hold { .. }) {
                         match note.kind {
                             NoteKind::Click => {
                                 note.judge = JudgeStatus::Judged;
-                                judgements.push((if dt <= LIMIT_PERFECT { Judgement::Perfect } else { Judgement::Good }, line_id, id, Some(t)));
+                                
+                                // Drag保护逻辑：只在Phigros判定模式且非严格判定时启用
+                                let mut judgement = if dt <= limit_perfect {
+                                    Judgement::Perfect
+                                } else if dt <= limit_good {
+                                    Judgement::Good
+                                } else {
+                                    Judgement::Bad
+                                };
+                                
+                                if res.config.relaxed_judge && !res.config.strict_judge {
+                                    // 清理过期的drag历史（超过150ms）
+                                    let mut drag_hist = self.drag_history.borrow_mut();
+                                    drag_hist.retain(|(drag_time, _, _)| (note.time - drag_time).abs() <= 0.15);
+                                    
+                                    // 检查是否有drag保护
+                                    let note_x = {
+                                        let mut x = note.object.translation.0.clone();
+                                        x.set_time(note.time);
+                                        x.now()
+                                    };
+                                    
+                                    for (drag_time, drag_line_id, drag_x) in drag_hist.iter() {
+                                        // 检查是否在同一判定线
+                                        if *drag_line_id == line_id {
+                                            let time_diff = (note.time - drag_time).abs();
+                                            let pos_diff = (note_x - drag_x).abs();
+                                            
+                                            // 同一位置的判定：x坐标差距小于0.1
+                                            if pos_diff <= 0.1 {
+                                                if time_diff <= 0.08 {
+                                                    // 80ms内：强制Perfect
+                                                    judgement = Judgement::Perfect;
+                                                    let log_msg = format!(
+                                                        "DRAG_PROTECT_80MS: tap forced to Perfect | time_diff={:.1}ms | pos_diff={:.3}",
+                                                        time_diff * 1000.0, pos_diff
+                                                    );
+                                                    info!("{}", log_msg);
+                                                    write_judge_log(&log_msg);
+                                                    break;
+                                                } else if time_diff <= 0.15 && matches!(judgement, Judgement::Bad) {
+                                                    // 150ms内：Bad提升为Good
+                                                    judgement = Judgement::Good;
+                                                    let log_msg = format!(
+                                                        "DRAG_PROTECT_150MS: tap upgraded from Bad to Good | time_diff={:.1}ms | pos_diff={:.3}",
+                                                        time_diff * 1000.0, pos_diff
+                                                    );
+                                                    info!("{}", log_msg);
+                                                    write_judge_log(&log_msg);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                let log_msg = format!(
+                                    "JUDGE_PATH_1_TOUCH: Click note | dt={:.1}ms | result={:?} | limit_p={:.1}ms | limit_g={:.1}ms | limit_b={:.1}ms | strict={} | phigros={}",
+                                    dt * 1000.0,
+                                    judgement,
+                                    limit_perfect * 1000.0,
+                                    limit_good * 1000.0,
+                                    limit_bad * 1000.0,
+                                    res.config.strict_judge,
+                                    res.config.relaxed_judge
+                                );
+                                info!("{}", log_msg);
+                                write_judge_log(&log_msg);
+                                // 使用原版的方式：传入t，在commit时计算diff
+                                judgements.push((judgement, line_id, id, Some(t)));
                             }
                             NoteKind::Hold { .. } => {
                                 note.hitsound.play(res);
-                                self.judgements.borrow_mut().push((t, line_id as _, id, Err(dt <= LIMIT_PERFECT)));
-                                note.judge = JudgeStatus::Hold(dt <= LIMIT_PERFECT, t, t, false, f32::INFINITY);
+                                self.judgements.borrow_mut().push((t, line_id as _, id, Err(dt <= limit_perfect)));
+                                note.judge = JudgeStatus::Hold(dt <= limit_perfect, t, t, false, f32::INFINITY);
                             }
                             _ => unreachable!(),
                         };
                     } else {
                         // prevent extra judgements
                         if matches!(note.judge, JudgeStatus::NotJudged) {
-                            // keep the note after bad judgement
-                            line.notes[id as usize].judge = JudgeStatus::PreJudge;
+                            // 超过limit_bad的音符直接判定为Bad，不再重新判定
+                            let log_msg = format!(
+                                "JUDGE_PATH_2_TIMEOUT: Click note | dt={:.1}ms | result=Bad | limit_b={:.1}ms | strict={} | phigros={}",
+                                dt * 1000.0,
+                                limit_bad * 1000.0,
+                                res.config.strict_judge,
+                                res.config.relaxed_judge
+                            );
+                            info!("{}", log_msg);
+                            write_judge_log(&log_msg);
+                            line.notes[id as usize].judge = JudgeStatus::Judged;
                             judgements.push((Judgement::Bad, line_id, id, None));
                         }
                     }
                 } else {
                     // flick
-                    line.notes[id as usize].judge = JudgeStatus::PreJudge;
+                    let note = &mut line.notes[id as usize];
+                    note.judge = JudgeStatus::PreJudge;
+                    
+                    let log_msg = format!(
+                        "FLICK_JUDGED: line_id={} | note_id={} | touch_id={} | dt={:.1}ms | phigros_mode={}",
+                        line_id,
+                        id,
+                        touch.id,
+                        dt * 1000.0,
+                        res.config.relaxed_judge
+                    );
+                    info!("{}", log_msg);
+                    write_judge_log(&log_msg);
+                    
                     if let Some(tracker) = self.trackers.get_mut(&touch.id) {
+                        // 重置flicked，允许下次检测
                         tracker.flicked = false;
+                        
+                        if res.config.relaxed_judge {
+                            // Phigros模式：标记这次滑动已判定，防止重复判定
+                            tracker.judged_this_swipe = true;
+                            let log_msg = format!(
+                                "PHIGROS_MODE: judged_this_swipe=true, no more flicks until speed drops"
+                            );
+                            info!("{}", log_msg);
+                            write_judge_log(&log_msg);
+                        }
                     }
                 }
             }
@@ -621,18 +879,79 @@ impl Judge {
             {
                 let note = &mut chart.lines[line_id].notes[id as usize];
                 let dt = (t - note.time).abs() / spd;
-                if dt <= if matches!(note.kind, NoteKind::Click) { LIMIT_BAD } else { LIMIT_GOOD } {
+                if dt <= if matches!(note.kind, NoteKind::Click) { limit_bad } else { limit_good } {
                     match note.kind {
                         NoteKind::Click => {
                             note.judge = JudgeStatus::Judged;
+                            
+                            // Drag保护逻辑：只在Phigros判定模式且非严格判定时启用
+                            let mut judgement = if dt <= limit_perfect {
+                                Judgement::Perfect
+                            } else if dt <= limit_good {
+                                Judgement::Good
+                            } else {
+                                Judgement::Bad
+                            };
+                            
+                            if res.config.relaxed_judge && !res.config.strict_judge {
+                                // 清理过期的drag历史（超过150ms）
+                                let mut drag_hist = self.drag_history.borrow_mut();
+                                drag_hist.retain(|(drag_time, _, _)| (note.time - drag_time).abs() <= 0.15);
+                                
+                                // 检查是否有drag保护
+                                let note_x = {
+                                    let mut x = note.object.translation.0.clone();
+                                    x.set_time(note.time);
+                                    x.now()
+                                };
+                                
+                                for (drag_time, drag_line_id, drag_x) in drag_hist.iter() {
+                                    // 检查是否在同一判定线
+                                    if *drag_line_id == line_id {
+                                        let time_diff = (note.time - drag_time).abs();
+                                        let pos_diff = (note_x - drag_x).abs();
+                                        
+                                        // 同一位置的判定：x坐标差距小于0.1
+                                        if pos_diff <= 0.1 {
+                                            if time_diff <= 0.08 {
+                                                // 80ms内：强制Perfect
+                                                judgement = Judgement::Perfect;
+                                                let log_msg = format!(
+                                                    "DRAG_PROTECT_80MS_KB: tap forced to Perfect | time_diff={:.1}ms | pos_diff={:.3}",
+                                                    time_diff * 1000.0, pos_diff
+                                                );
+                                                info!("{}", log_msg);
+                                                write_judge_log(&log_msg);
+                                                break;
+                                            } else if time_diff <= 0.15 && matches!(judgement, Judgement::Bad) {
+                                                // 150ms内：Bad提升为Good
+                                                judgement = Judgement::Good;
+                                                let log_msg = format!(
+                                                    "DRAG_PROTECT_150MS_KB: tap upgraded from Bad to Good | time_diff={:.1}ms | pos_diff={:.3}",
+                                                    time_diff * 1000.0, pos_diff
+                                                );
+                                                info!("{}", log_msg);
+                                                write_judge_log(&log_msg);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            let log_msg = format!(
+                                "JUDGE_PATH_3_KEYBOARD: Click note | dt={:.1}ms | result={:?} | limit_p={:.1}ms | limit_g={:.1}ms | limit_b={:.1}ms | strict={} | phigros={}",
+                                dt * 1000.0,
+                                judgement,
+                                limit_perfect * 1000.0,
+                                limit_good * 1000.0,
+                                limit_bad * 1000.0,
+                                res.config.strict_judge,
+                                res.config.relaxed_judge
+                            );
+                            info!("{}", log_msg);
+                            write_judge_log(&log_msg);
                             judgements.push((
-                                if dt <= LIMIT_PERFECT {
-                                    Judgement::Perfect
-                                } else if dt <= LIMIT_GOOD {
-                                    Judgement::Good
-                                } else {
-                                    Judgement::Bad
-                                },
+                                judgement,
                                 line_id,
                                 id,
                                 None,
@@ -640,8 +959,8 @@ impl Judge {
                         }
                         NoteKind::Hold { .. } => {
                             note.hitsound.play(res);
-                            self.judgements.borrow_mut().push((t, line_id as _, id, Err(dt <= LIMIT_PERFECT)));
-                            note.judge = JudgeStatus::Hold(dt <= LIMIT_PERFECT, t, (t - note.time) / spd, false, f32::INFINITY);
+                            self.judgements.borrow_mut().push((t, line_id as _, id, Err(dt <= limit_perfect)));
+                            note.judge = JudgeStatus::Hold(dt <= limit_perfect, t, (t - note.time) / spd, false, f32::INFINITY);
                         }
                         _ => unreachable!(),
                     };
@@ -656,7 +975,7 @@ impl Judge {
                 let note = &mut line.notes[*id as usize];
                 if let NoteKind::Hold { end_time, .. } = &note.kind {
                     if let JudgeStatus::Hold(.., ref mut pre_judge, ref mut up_time) = note.judge {
-                        if (*end_time - t) / spd <= LIMIT_BAD {
+                        if (*end_time - t) / spd <= limit_bad {
                             *pre_judge = true;
                             continue;
                         }
@@ -681,12 +1000,12 @@ impl Judge {
                 }
                 // process miss
                 let dt = (t - note.time) / spd;
-                if dt > LIMIT_BAD {
+                if dt > limit_bad {
                     note.judge = JudgeStatus::Judged;
                     judgements.push((Judgement::Miss, line_id, *id, None));
                     continue;
                 }
-                if -dt > LIMIT_BAD {
+                if -dt > limit_bad {
                     break;
                 }
                 if !matches!(note.kind, NoteKind::Drag) && (self.key_down_count == 0 || !matches!(note.kind, NoteKind::Flick)) {
@@ -700,11 +1019,22 @@ impl Judge {
                     || pos.iter().any(|it| {
                         it.is_some_and(|it| {
                             let dx = (it.x - x).abs();
-                            dx <= X_DIFF_MAX && dt <= (LIMIT_BAD - LIMIT_PERFECT * (dx - 0.9).max(0.))
+                            dx <= X_DIFF_MAX && dt <= (limit_bad - limit_perfect * (dx - 0.9).max(0.))
                         })
                     })
                 {
                     note.judge = JudgeStatus::PreJudge;
+                    
+                    // 记录drag的位置和时间用于保护tap
+                    if matches!(note.kind, NoteKind::Drag) {
+                        self.drag_history.borrow_mut().push((note.time, line_id, x));
+                        let log_msg = format!(
+                            "DRAG_RECORDED: time={:.3}s | line_id={} | x={:.3}",
+                            note.time, line_id, x
+                        );
+                        info!("{}", log_msg);
+                        write_judge_log(&log_msg);
+                    }
                 }
             }
         }
@@ -723,7 +1053,7 @@ impl Judge {
                     }
                 }
                 // TODO adjust
-                let ghost_t = t + LIMIT_GOOD;
+                let ghost_t = t + limit_good;
                 if matches!(note.kind, NoteKind::Click) {
                     if ghost_t < note.time {
                         break;
@@ -738,7 +1068,79 @@ impl Judge {
                         None
                     };
                     note.judge = JudgeStatus::Judged;
-                    if !matches!(note.kind, NoteKind::Click) {
+                    if matches!(note.kind, NoteKind::Click) {
+                        // Click音符也需要根据时间偏差判定等级
+                        let dt = (t - note.time).abs() / spd;
+                        
+                        // Drag保护逻辑：只在Phigros判定模式且非严格判定时启用
+                        let mut judgement = if dt <= limit_perfect {
+                            Judgement::Perfect
+                        } else if dt <= limit_good {
+                            Judgement::Good
+                        } else {
+                            Judgement::Bad
+                        };
+                        
+                        if res.config.relaxed_judge && !res.config.strict_judge {
+                            // 清理过期的drag历史（超过150ms）
+                            let mut drag_hist = self.drag_history.borrow_mut();
+                            drag_hist.retain(|(drag_time, _, _)| (note.time - drag_time).abs() <= 0.15);
+                            
+                            // 检查是否有drag保护
+                            let note_x = {
+                                let mut x = note.object.translation.0.clone();
+                                x.set_time(note.time);
+                                x.now()
+                            };
+                            
+                            for (drag_time, drag_line_id, drag_x) in drag_hist.iter() {
+                                // 检查是否在同一判定线
+                                if *drag_line_id == line_id {
+                                    let time_diff = (note.time - drag_time).abs();
+                                    let pos_diff = (note_x - drag_x).abs();
+                                    
+                                    // 同一位置的判定：x坐标差距小于0.1
+                                    if pos_diff <= 0.1 {
+                                        if time_diff <= 0.08 {
+                                            // 80ms内：强制Perfect
+                                            judgement = Judgement::Perfect;
+                                            let log_msg = format!(
+                                                "DRAG_PROTECT_80MS_PRE: tap forced to Perfect | time_diff={:.1}ms | pos_diff={:.3}",
+                                                time_diff * 1000.0, pos_diff
+                                            );
+                                            info!("{}", log_msg);
+                                            write_judge_log(&log_msg);
+                                            break;
+                                        } else if time_diff <= 0.15 && matches!(judgement, Judgement::Bad) {
+                                            // 150ms内：Bad提升为Good
+                                            judgement = Judgement::Good;
+                                            let log_msg = format!(
+                                                "DRAG_PROTECT_150MS_PRE: tap upgraded from Bad to Good | time_diff={:.1}ms | pos_diff={:.3}",
+                                                time_diff * 1000.0, pos_diff
+                                            );
+                                            info!("{}", log_msg);
+                                            write_judge_log(&log_msg);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        let log_msg = format!(
+                            "JUDGE_PATH_4_PREJUDGE: Click note | dt={:.1}ms | result={:?} | limit_p={:.1}ms | limit_g={:.1}ms | limit_b={:.1}ms | strict={} | phigros={}",
+                            dt * 1000.0,
+                            judgement,
+                            limit_perfect * 1000.0,
+                            limit_good * 1000.0,
+                            limit_bad * 1000.0,
+                            res.config.strict_judge,
+                            res.config.relaxed_judge
+                        );
+                        info!("{}", log_msg);
+                        write_judge_log(&log_msg);
+                        judgements.push((judgement, line_id, *id, diff));
+                    } else {
+                        // Drag和Flick音符在PreJudge状态下判定为Perfect
                         judgements.push((Judgement::Perfect, line_id, *id, diff));
                     }
                 }

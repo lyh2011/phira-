@@ -46,6 +46,12 @@ item-dhint = Gleichzeitiger Hinweis
 item-dhint-sub = Hebt Noten hervor, die gleichzeitig getroffen werden müssen.
 item-opt = Level-Optimierung
 item-opt-sub = Spiel-Performance stark verbessern. (Bei unerwartetem Verhalten deaktivieren.)
+item-relaxed-judge = Phigros判定
+item-relaxed-judge-sub = 使用Phigros的判定窗口（±80ms）
+item-strict-judge = 严判模式
+item-strict-judge-sub = Perfect ±40ms, Good ±40~75ms（需要先启用Phigros判定）
+item-show-judge-offset = Beurteilungsversatz anzeigen
+item-show-judge-offset-sub = Zeigt den Zeitversatz (±ms) der letzten Beurteilung unter dem Score an
 item-speed = Geschwindigkeit
 item-note-size = Notengröße
 

@@ -46,6 +46,12 @@ item-dhint = Indication d'appui simultané
 item-dhint-sub = Les notes qui touchent la ligne simultanément seront mises en surbrillance.
 item-opt = Optimisation agressive
 item-opt-sub = Améliore les performances, mais peux provoquer des comportements incorrects
+item-relaxed-judge = Phigros判定
+item-relaxed-judge-sub = 使用Phigros的判定窗口（±80ms）
+item-strict-judge = 严判模式
+item-strict-judge-sub = Perfect ±40ms, Good ±40~75ms（需要先启用Phigros判定）
+item-show-judge-offset = Afficher le décalage de jugement
+item-show-judge-offset-sub = Afficher le décalage temporel (±ms) du dernier jugement sous le score
 item-speed = Vitesse
 item-note-size = Taille des notes
 

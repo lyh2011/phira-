@@ -283,6 +283,8 @@ struct GeneralList {
     insecure_btn: DRectButton,
     enable_anys_btn: DRectButton,
     anys_gateway_btn: DRectButton,
+    custom_rks_btn: DRectButton,
+    custom_rks_input_btn: DRectButton,
 
     cache_size: Option<u64>,
     cache_task: Option<Task<Result<u64>>>,
@@ -316,6 +318,8 @@ impl GeneralList {
             insecure_btn: DRectButton::new(),
             enable_anys_btn: DRectButton::new(),
             anys_gateway_btn: DRectButton::new(),
+            custom_rks_btn: DRectButton::new(),
+            custom_rks_input_btn: DRectButton::new(),
 
             cache_size: None,
             cache_task: None,
@@ -405,6 +409,14 @@ impl GeneralList {
             request_input("anys_gateway", &data.anys_gateway);
             return Ok(Some(true));
         }
+        if self.custom_rks_btn.touch(touch, t) {
+            config.custom_rks_enabled ^= true;
+            return Ok(Some(true));
+        }
+        if self.custom_rks_input_btn.touch(touch, t) {
+            request_input("custom_rks", &format!("{:.2}", config.custom_rks));
+            return Ok(Some(true));
+        }
         Ok(None)
     }
 
@@ -432,6 +444,17 @@ impl GeneralList {
                 } else {
                     data.anys_gateway = text.trim_end_matches('/').to_string();
                     return Ok(true);
+                }
+            } else if id == "custom_rks" {
+                match text.parse::<f32>() {
+                    Ok(rks) if rks >= 0.0 && rks <= 20.0 => {
+                        data.config.custom_rks = rks;
+                        return Ok(true);
+                    }
+                    _ => {
+                        show_error(anyhow::Error::msg(tl!("item-custom-rks-invalid")));
+                        return Ok(false);
+                    }
                 }
             } else {
                 return_input(id, text);
@@ -515,6 +538,17 @@ impl GeneralList {
         item! {
             render_title(ui, tl!("item-anys-gateway"), Some(tl!("item-anys-gateway-sub")));
             self.anys_gateway_btn.render_text(ui, rr, t, &data.anys_gateway, 0.4, false);
+        }
+        h += 0.2;
+        item! {
+            render_title(ui, tl!("item-custom-rks"), Some(tl!("item-custom-rks-sub")));
+            render_switch(ui, rr, t, &mut self.custom_rks_btn, config.custom_rks_enabled);
+        }
+        if config.custom_rks_enabled {
+            item! {
+                render_title(ui, tl!("item-custom-rks-value"), None);
+                self.custom_rks_input_btn.render_text(ui, rr, t, &format!("{:.2}", config.custom_rks), 0.5, false);
+            }
         }
         self.lang_btn.render_top(ui, t, 1.);
         (w, h)
@@ -651,6 +685,10 @@ struct ChartList {
     dc_pause_btn: DRectButton,
     dhint_btn: DRectButton,
     opt_btn: DRectButton,
+    relaxed_judge_btn: DRectButton,
+    strict_judge_btn: DRectButton,
+    show_judge_offset_btn: DRectButton,
+    enable_judge_log_btn: DRectButton,
     speed_slider: Slider,
     size_slider: Slider,
 }
@@ -662,6 +700,10 @@ impl ChartList {
             dc_pause_btn: DRectButton::new(),
             dhint_btn: DRectButton::new(),
             opt_btn: DRectButton::new(),
+            relaxed_judge_btn: DRectButton::new(),
+            strict_judge_btn: DRectButton::new(),
+            show_judge_offset_btn: DRectButton::new(),
+            enable_judge_log_btn: DRectButton::new(),
             speed_slider: Slider::new(0.5..2., 0.05),
             size_slider: Slider::new(0.8..1.2, 0.005),
         }
@@ -688,6 +730,28 @@ impl ChartList {
         }
         if self.opt_btn.touch(touch, t) {
             config.aggressive ^= true;
+            return Ok(Some(true));
+        }
+        if self.relaxed_judge_btn.touch(touch, t) {
+            config.relaxed_judge ^= true;
+            // 关闭 Phigros 判定时，自动关闭严判模式
+            if !config.relaxed_judge {
+                config.strict_judge = false;
+            }
+            return Ok(Some(true));
+        }
+        if self.strict_judge_btn.touch(touch, t) {
+            config.strict_judge ^= true;
+            return Ok(Some(true));
+        }
+        if self.show_judge_offset_btn.touch(touch, t) {
+            config.show_judge_offset ^= true;
+            return Ok(Some(true));
+        }
+        if self.enable_judge_log_btn.touch(touch, t) {
+            config.enable_judge_log ^= true;
+            // 同步更新全局日志开关
+            prpr::judge::set_judge_log_enabled(config.enable_judge_log);
             return Ok(Some(true));
         }
         if let wt @ Some(_) = self.speed_slider.touch(touch, t, &mut config.speed) {
@@ -722,6 +786,14 @@ impl ChartList {
             render_switch(ui, rr, t, &mut self.show_acc_btn, config.show_acc);
         }
         item! {
+            render_title(ui, tl!("item-show-judge-offset"), Some(tl!("item-show-judge-offset-sub")));
+            render_switch(ui, rr, t, &mut self.show_judge_offset_btn, config.show_judge_offset);
+        }
+        item! {
+            render_title(ui, tl!("item-enable-judge-log"), Some(tl!("item-enable-judge-log-sub")));
+            render_switch(ui, rr, t, &mut self.enable_judge_log_btn, config.enable_judge_log);
+        }
+        item! {
             render_title(ui, tl!("item-dc-pause"), None);
             render_switch(ui, rr, t, &mut self.dc_pause_btn, config.double_click_to_pause);
         }
@@ -732,6 +804,17 @@ impl ChartList {
         item! {
             render_title(ui, tl!("item-opt"), Some(tl!("item-opt-sub")));
             render_switch(ui, rr, t, &mut self.opt_btn, config.aggressive);
+        }
+        item! {
+            render_title(ui, tl!("item-relaxed-judge"), Some(tl!("item-relaxed-judge-sub")));
+            render_switch(ui, rr, t, &mut self.relaxed_judge_btn, config.relaxed_judge);
+        }
+        // 只在 Phigros 判定启用时显示严判模式
+        if config.relaxed_judge {
+            item! {
+                render_title(ui, tl!("item-strict-judge"), Some(tl!("item-strict-judge-sub")));
+                render_switch(ui, rr, t, &mut self.strict_judge_btn, config.strict_judge);
+            }
         }
         item! {
             render_title(ui, tl!("item-speed"), None);
