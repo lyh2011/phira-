@@ -689,6 +689,8 @@ struct ChartList {
     strict_judge_btn: DRectButton,
     show_judge_offset_btn: DRectButton,
     enable_judge_log_btn: DRectButton,
+    show_judge_details_btn: DRectButton,
+    show_perfect_combo_btn: DRectButton, // 新增：显示 Perfect Combo 按钮
     speed_slider: Slider,
     size_slider: Slider,
 }
@@ -704,6 +706,8 @@ impl ChartList {
             strict_judge_btn: DRectButton::new(),
             show_judge_offset_btn: DRectButton::new(),
             enable_judge_log_btn: DRectButton::new(),
+            show_judge_details_btn: DRectButton::new(),
+            show_perfect_combo_btn: DRectButton::new(), // 新增
             speed_slider: Slider::new(0.5..2., 0.05),
             size_slider: Slider::new(0.8..1.2, 0.005),
         }
@@ -754,6 +758,14 @@ impl ChartList {
             prpr::judge::set_judge_log_enabled(config.enable_judge_log);
             return Ok(Some(true));
         }
+        if self.show_judge_details_btn.touch(touch, t) {
+            config.show_judge_details ^= true;
+            return Ok(Some(true));
+        }
+        if self.show_perfect_combo_btn.touch(touch, t) {
+            config.show_perfect_combo ^= true;
+            return Ok(Some(true));
+        }
         if let wt @ Some(_) = self.speed_slider.touch(touch, t, &mut config.speed) {
             return Ok(wt);
         }
@@ -792,6 +804,14 @@ impl ChartList {
         item! {
             render_title(ui, tl!("item-enable-judge-log"), Some(tl!("item-enable-judge-log-sub")));
             render_switch(ui, rr, t, &mut self.enable_judge_log_btn, config.enable_judge_log);
+        }
+        item! {
+            render_title(ui, tl!("item-show-judge-details"), Some(tl!("item-show-judge-details-sub")));
+            render_switch(ui, rr, t, &mut self.show_judge_details_btn, config.show_judge_details);
+        }
+        item! {
+            render_title(ui, tl!("item-show-perfect-combo"), Some(tl!("item-show-perfect-combo-sub")));
+            render_switch(ui, rr, t, &mut self.show_perfect_combo_btn, config.show_perfect_combo);
         }
         item! {
             render_title(ui, tl!("item-dc-pause"), None);

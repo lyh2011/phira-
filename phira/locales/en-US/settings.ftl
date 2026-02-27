@@ -59,6 +59,10 @@ item-show-judge-offset = Show Judge Offset
 item-show-judge-offset-sub = Display timing offset (±ms) of the last judgment below score
 item-enable-judge-log = Enable Judge Log
 item-enable-judge-log-sub = Record detailed judgment information to log file (for debugging)
+item-show-judge-details = Show Judge Details
+item-show-judge-details-sub = Display real-time count of each judgment type during gameplay
+item-show-perfect-combo = Show Perfect Combo
+item-show-perfect-combo-sub = Display consecutive Perfect count instead of regular combo
 item-speed = Speed
 item-note-size = Note Size
 

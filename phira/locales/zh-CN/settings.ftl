@@ -59,6 +59,10 @@ item-show-judge-offset = 显示判定偏差
 item-show-judge-offset-sub = 在分数下方显示最近一次判定的时间偏差（±毫秒）
 item-enable-judge-log = 启用判定日志
 item-enable-judge-log-sub = 记录详细的判定信息到日志文件（用于调试）
+item-show-judge-details = 显示判定详情
+item-show-judge-details-sub = 在游戏中实时显示各判定等级的数量
+item-show-perfect-combo = 显示 Perfect Combo
+item-show-perfect-combo-sub = 将 COMBO 数改为连续 Perfect 数
 item-speed = 速度
 item-note-size = 音符大小
 

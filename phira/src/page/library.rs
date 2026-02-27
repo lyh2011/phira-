@@ -1009,7 +1009,7 @@ impl Page for LibraryPage {
                         // 在子文件夹中，显示所有按钮在一行（6个按钮）
                         let btn_h = r.h; // 使用搜索框的高度
                         let btn_w = btn_h; // 按钮宽度等于高度，保持正方形
-                        let spacing = 0.006;
+                        let spacing = 0.012; // 增加按钮间距
                         let start_x = r.right() - btn_w * 6.0 - spacing * 5.0;
                         
                         let mut btn_r = Rect::new(start_x, r.y, btn_w, btn_h);
@@ -1157,7 +1157,7 @@ impl Page for LibraryPage {
                         // 在根目录，只显示导入和新建文件夹按钮
                         let btn_h = r.h; // 使用搜索框的高度
                         let btn_w = btn_h; // 按钮宽度等于高度，保持正方形
-                        let spacing = 0.01;
+                        let spacing = 0.015; // 增加按钮间距
                         
                         // 新建文件夹按钮
                         let btn_r = Rect::new(r.right() - btn_w * 2.0 - spacing, r.y, btn_w, btn_h);

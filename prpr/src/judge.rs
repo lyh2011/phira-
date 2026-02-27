@@ -266,6 +266,7 @@ pub(crate) struct JudgeInner {
 
     combo: u32,
     max_combo: u32,
+    perfect_combo: u32, // 新增：Perfect Combo 计数
     counts: [u32; 4],
     num_of_notes: u32,
 }
@@ -278,6 +279,7 @@ impl JudgeInner {
 
             combo: 0,
             max_combo: 0,
+            perfect_combo: 0, // 初始化
             counts: [0; 4],
             num_of_notes,
         }
@@ -295,9 +297,16 @@ impl JudgeInner {
                 if self.combo > self.max_combo {
                     self.max_combo = self.combo;
                 }
+                // 更新 Perfect Combo
+                if matches!(what, Perfect) {
+                    self.perfect_combo += 1;
+                } else {
+                    self.perfect_combo = 0;
+                }
             }
             _ => {
                 self.combo = 0;
+                self.perfect_combo = 0;
             }
         }
     }
@@ -305,6 +314,7 @@ impl JudgeInner {
     pub fn reset(&mut self) {
         self.combo = 0;
         self.max_combo = 0;
+        self.perfect_combo = 0;
         self.counts = [0; 4];
         self.diffs.clear();
     }
@@ -333,6 +343,16 @@ impl JudgeInner {
 
     pub fn result(&self) -> PlayResult {
         let early = self.diffs.iter().filter(|it| **it < 0.).count() as u32;
+        
+        // 计算标准差
+        let std = if !self.diffs.is_empty() {
+            let mean = self.diffs.iter().sum::<f32>() / self.diffs.len() as f32;
+            let variance = self.diffs.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / self.diffs.len() as f32;
+            variance.sqrt()
+        } else {
+            0.
+        };
+        
         PlayResult {
             score: self.score(),
             accuracy: self.accuracy(),
@@ -341,12 +361,16 @@ impl JudgeInner {
             counts: self.counts,
             early,
             late: self.diffs.len() as u32 - early,
-            std: 0.,
+            std,
         }
     }
 
     pub fn combo(&self) -> u32 {
         self.combo
+    }
+
+    pub fn perfect_combo(&self) -> u32 {
+        self.perfect_combo
     }
 
     pub fn counts(&self) -> [u32; 4] {
@@ -373,6 +397,8 @@ pub struct Judge {
     pub(crate) inner: JudgeInner,
     pub judgements: RefCell<Vec<(f32, u32, u32, Result<Judgement, bool>)>>,
     pub last_judge_offset: RefCell<Option<f32>>, // 最近一次判定的偏差（秒）
+    pub last_good_early_late: RefCell<Option<bool>>, // 最近一次 Good 判定是否为 EARLY (true=EARLY, false=LATE)
+    pub last_good_time: RefCell<f32>, // 最近一次 Good 判定的时间
     
     // Drag保护：记录最近的drag判定信息 (时间, 判定线ID, x位置)
     drag_history: RefCell<Vec<(f32, usize, f32)>>,
@@ -404,6 +430,8 @@ impl Judge {
             inner: JudgeInner::new(chart.lines.iter().map(|it| it.notes.iter().filter(|it| !it.fake).count() as u32).sum()),
             judgements: RefCell::new(Vec::new()),
             last_judge_offset: RefCell::new(None),
+            last_good_early_late: RefCell::new(None),
+            last_good_time: RefCell::new(0.),
             drag_history: RefCell::new(Vec::new()),
         }
     }
@@ -413,10 +441,12 @@ impl Judge {
         self.trackers.clear();
         self.inner.reset();
         *self.last_judge_offset.borrow_mut() = None;
+        *self.last_good_early_late.borrow_mut() = None;
+        *self.last_good_time.borrow_mut() = 0.;
         self.judgements.borrow_mut().clear();
     }
 
-    pub fn commit(&mut self, t: f32, what: Judgement, line_id: u32, note_id: u32, diff: f32) {
+    pub fn commit(&mut self, t: f32, what: Judgement, line_id: u32, note_id: u32, diff: f32, note_kind: &NoteKind) {
         let log_msg = format!(
             "JUDGE_COMMIT: result={:?} | diff={:.1}ms | line_id={} | note_id={}",
             what,
@@ -429,9 +459,14 @@ impl Judge {
         
         self.judgements.borrow_mut().push((t, line_id, note_id, Ok(what)));
         self.inner.commit(what, diff);
-        // 记录最近的判定偏差（不包括 Miss）
-        if !matches!(what, Judgement::Miss) {
+        // 记录最近的判定偏差（不包括 Miss、Drag 和 Flick）
+        if !matches!(what, Judgement::Miss) && !matches!(note_kind, NoteKind::Drag | NoteKind::Flick) {
             *self.last_judge_offset.borrow_mut() = Some(diff);
+        }
+        // 记录 Good 判定的 EARLY/LATE 信息（不包括 Drag 和 Flick）
+        if matches!(what, Judgement::Good) && !matches!(note_kind, NoteKind::Drag | NoteKind::Flick) {
+            *self.last_good_early_late.borrow_mut() = Some(diff < 0.0); // true=EARLY, false=LATE
+            *self.last_good_time.borrow_mut() = t;
         }
     }
 
@@ -805,6 +840,16 @@ impl Judge {
                                 note.hitsound.play(res);
                                 self.judgements.borrow_mut().push((t, line_id as _, id, Err(dt <= limit_perfect)));
                                 note.judge = JudgeStatus::Hold(dt <= limit_perfect, t, t, false, f32::INFINITY);
+                                
+                                // Hold 音符按下时立即显示判定偏差和 EARLY/LATE
+                                let diff = (t - note.time) / spd;
+                                if dt <= limit_perfect {
+                                    *self.last_judge_offset.borrow_mut() = Some(diff);
+                                } else if dt <= limit_good {
+                                    *self.last_judge_offset.borrow_mut() = Some(diff);
+                                    *self.last_good_early_late.borrow_mut() = Some(diff < 0.0);
+                                    *self.last_good_time.borrow_mut() = t;
+                                }
                             }
                             _ => unreachable!(),
                         };
@@ -961,6 +1006,16 @@ impl Judge {
                             note.hitsound.play(res);
                             self.judgements.borrow_mut().push((t, line_id as _, id, Err(dt <= limit_perfect)));
                             note.judge = JudgeStatus::Hold(dt <= limit_perfect, t, (t - note.time) / spd, false, f32::INFINITY);
+                            
+                            // Hold 音符按下时立即显示判定偏差和 EARLY/LATE
+                            let diff = (t - note.time) / spd;
+                            if dt <= limit_perfect {
+                                *self.last_judge_offset.borrow_mut() = Some(diff);
+                            } else if dt <= limit_good {
+                                *self.last_judge_offset.borrow_mut() = Some(diff);
+                                *self.last_good_early_late.borrow_mut() = Some(diff < 0.0);
+                                *self.last_good_time.borrow_mut() = t;
+                            }
                         }
                         _ => unreachable!(),
                     };
@@ -1166,6 +1221,7 @@ impl Judge {
                 } else {
                     (diff.unwrap_or(t) - note.time) / spd
                 },
+                &note.kind,
             );
             if matches!(note.kind, NoteKind::Hold { .. }) {
                 continue;
@@ -1257,7 +1313,7 @@ impl Judge {
             }
         }
         for (line_id, id) in judgements.into_iter() {
-            self.commit(t, Judgement::Perfect, line_id as _, id, 0.);
+            self.commit(t, Judgement::Perfect, line_id as _, id, 0., &chart.lines[line_id].notes[id as usize].kind);
             let (note_transform, note_hitsound) = {
                 let line = &mut chart.lines[line_id];
                 let note = &mut line.notes[id as usize];
@@ -1284,6 +1340,11 @@ impl Judge {
     #[inline]
     pub fn combo(&self) -> u32 {
         self.inner.combo()
+    }
+
+    #[inline]
+    pub fn perfect_combo(&self) -> u32 {
+        self.inner.perfect_combo()
     }
 
     #[inline]

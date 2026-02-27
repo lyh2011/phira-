@@ -431,7 +431,49 @@ impl GameScene {
                                 .size(0.35)
                                 .color(offset_color)
                                 .draw_using(&PGR_FONT);
+                            offset_y += h * 0.5;
                         }
+                    }
+                    // 显示判定详情
+                    if res.config.show_judge_details {
+                        let counts = self.judge.counts();
+                        let detail_size = 0.35;
+                        let line_height = h * 0.5;
+                        
+                        // Perfect (金色)
+                        ui.text(format!("{}", counts[0]))
+                            .pos(1. - margin, score_top + offset_y)
+                            .anchor(1., 0.)
+                            .size(detail_size)
+                            .color(Color::new(1.0, 0.84, 0.0, c.a * 0.9)) // 金色
+                            .draw_using(&PGR_FONT);
+                        offset_y += line_height;
+                        
+                        // Good (蓝色)
+                        ui.text(format!("{}", counts[1]))
+                            .pos(1. - margin, score_top + offset_y)
+                            .anchor(1., 0.)
+                            .size(detail_size)
+                            .color(Color::new(0.0, 0.7, 1.0, c.a * 0.9)) // 蓝色
+                            .draw_using(&PGR_FONT);
+                        offset_y += line_height;
+                        
+                        // Bad (红色)
+                        ui.text(format!("{}", counts[2]))
+                            .pos(1. - margin, score_top + offset_y)
+                            .anchor(1., 0.)
+                            .size(detail_size)
+                            .color(Color::new(1.0, 0.0, 0.0, c.a * 0.9)) // 红色
+                            .draw_using(&PGR_FONT);
+                        offset_y += line_height;
+                        
+                        // Miss (白色)
+                        ui.text(format!("{}", counts[3]))
+                            .pos(1. - margin, score_top + offset_y)
+                            .anchor(1., 0.)
+                            .size(detail_size)
+                            .color(Color::new(1.0, 1.0, 1.0, c.a * 0.9)) // 白色
+                            .draw_using(&PGR_FONT);
                     }
                 },
             );
@@ -451,37 +493,58 @@ impl GameScene {
             );
             if self.judge.combo() >= 3 {
                 let combo_top = top + eps * 2. - (1. - p) * 0.4;
-                let btm = self.chart.with_element(
-                    ui,
-                    res,
-                    UIElement::ComboNumber,
-                    Some((0., combo_top + unit_h / 2.)),
-                    Some((0., combo_top + unit_h / 2.)),
-                    |ui, c| {
-                        ui.text(self.judge.combo().to_string())
-                            .pos(0., combo_top)
-                            .anchor(0.5, 0.)
-                            .color(c)
-                            .draw_using(&PGR_FONT)
-                            .bottom()
-                    },
-                );
-                let combo_top = btm + 0.01;
-                self.chart.with_element(
-                    ui,
-                    res,
-                    UIElement::Combo,
-                    Some((0., combo_top + unit_h * 0.2)),
-                    Some((0., combo_top + unit_h * 0.2)),
-                    |ui, c| {
-                        ui.text(if res.config.autoplay() { "AUTOPLAY" } else { "COMBO" })
-                            .pos(0., combo_top)
-                            .anchor(0.5, 0.)
-                            .size(0.4)
-                            .color(c)
-                            .draw_using(&PGR_FONT);
-                    },
-                );
+                let combo_value = if res.config.show_perfect_combo {
+                    self.judge.perfect_combo()
+                } else {
+                    self.judge.combo()
+                };
+                // 当启用 Perfect Combo 时，只有 perfect_combo >= 3 才显示
+                let should_show = if res.config.show_perfect_combo {
+                    combo_value >= 3
+                } else {
+                    true // 普通 combo 已经通过外层 if 检查了
+                };
+                
+                if should_show {
+                    let btm = self.chart.with_element(
+                        ui,
+                        res,
+                        UIElement::ComboNumber,
+                        Some((0., combo_top + unit_h / 2.)),
+                        Some((0., combo_top + unit_h / 2.)),
+                        |ui, c| {
+                            ui.text(combo_value.to_string())
+                                .pos(0., combo_top)
+                                .anchor(0.5, 0.)
+                                .color(c)
+                                .draw_using(&PGR_FONT)
+                                .bottom()
+                        },
+                    );
+                    let combo_top = btm + 0.01;
+                    self.chart.with_element(
+                        ui,
+                        res,
+                        UIElement::Combo,
+                        Some((0., combo_top + unit_h * 0.2)),
+                        Some((0., combo_top + unit_h * 0.2)),
+                        |ui, c| {
+                            let combo_text = if res.config.autoplay() {
+                                "AUTOPLAY"
+                            } else if res.config.show_perfect_combo {
+                                "PERFECT"
+                            } else {
+                                "COMBO"
+                            };
+                            ui.text(combo_text)
+                                .pos(0., combo_top)
+                                .anchor(0.5, 0.)
+                                .size(0.4)
+                                .color(c)
+                                .draw_using(&PGR_FONT);
+                        },
+                    );
+                }
             }
             // magic to make score visible, refer to phira/src/rate.rs#L219
             ui.text("").draw_using(&PGR_FONT);
@@ -618,6 +681,26 @@ impl GameScene {
                 }
             }
             if self.mode == GameMode::Exercise {
+                // AutoPlay开关（移到界面最顶部，独立显示）
+                let autoplay_enabled = self.res.config.autoplay();
+                let switch_text = if autoplay_enabled {
+                    format!("{}: {}", tl!("autoplay"), tl!("autoplay-on"))
+                } else {
+                    format!("{}: {}", tl!("autoplay"), tl!("autoplay-off"))
+                };
+                let top = -1. / self.res.aspect_ratio;
+                let r = ui.text(&switch_text).pos(0., top + 0.02).anchor(0.5, 0.).size(0.5).measure();
+                let btn_rect = r.feather(0.02);
+                ui.fill_rect(btn_rect, Color::new(1., 1., 1., if autoplay_enabled { 0.8 } else { 0.4 }));
+                ui.text(&switch_text).pos(0., top + 0.02).anchor(0.5, 0.).size(0.5).color(BLACK).draw();
+                
+                // 检测点击
+                for touch in Judge::get_touches() {
+                    if touch.phase == TouchPhase::Started && btn_rect.contains(touch.position) {
+                        self.res.config.mods.toggle(Mods::AUTOPLAY);
+                    }
+                }
+                
                 let asp = self.touch_scale();
                 for touch in ui.ensure_touches() {
                     touch.position *= asp;
@@ -626,27 +709,6 @@ impl GameScene {
                     ui.dx(0.3);
                     ui.dy(-0.3);
                     
-                    // AutoPlay开关（移到最顶部）
-                    let autoplay_enabled = self.res.config.autoplay();
-                    let switch_text = if autoplay_enabled {
-                        format!("{}: {}", tl!("autoplay"), tl!("autoplay-on"))
-                    } else {
-                        format!("{}: {}", tl!("autoplay"), tl!("autoplay-off"))
-                    };
-                    let r = ui.text(&switch_text).pos(0., 0.).anchor(0.5, 0.).size(0.5).measure();
-                    let btn_rect = r.feather(0.02);
-                    ui.fill_rect(btn_rect, Color::new(1., 1., 1., if autoplay_enabled { 0.8 } else { 0.4 }));
-                    ui.text(&switch_text).pos(0., 0.).anchor(0.5, 0.).size(0.5).color(BLACK).draw();
-                    
-                    // 检测点击
-                    let global_rect = ui.rect_to_global(btn_rect);
-                    for touch in Judge::get_touches() {
-                        if touch.phase == TouchPhase::Started && global_rect.contains(touch.position) {
-                            self.res.config.mods.toggle(Mods::AUTOPLAY);
-                        }
-                    }
-                    
-                    ui.dy(0.06);
                     ui.slider(tl!("speed"), 0.5..2.0, 0.05, &mut self.res.config.speed, Some(0.5));
                 });
                 ui.dy(0.06);
@@ -768,6 +830,27 @@ impl GameScene {
         }
         for pos in &self.touch_points {
             ui.fill_circle(pos.0, pos.1, 0.04, Color { a: 0.4, ..BLUE });
+        }
+        
+        // 显示 EARLY/LATE（在最上层，红色）
+        if self.res.config.show_judge_offset {
+            if let Some(is_early) = *self.judge.last_good_early_late.borrow() {
+                let last_good_time = *self.judge.last_good_time.borrow();
+                let current_time = tm.now() as f32;
+                // 显示 0.5 秒
+                if current_time - last_good_time <= 0.5 {
+                    let fade_progress = (current_time - last_good_time) / 0.5;
+                    let alpha = (1.0 - fade_progress).max(0.0);
+                    let text = if is_early { "EARLY" } else { "LATE" };
+                    let color = Color::new(1.0, 0.0, 0.0, self.res.alpha * alpha * 0.9); // 红色
+                    ui.text(text)
+                        .pos(0., 0.)
+                        .anchor(0.5, 0.5)
+                        .size(1.2)
+                        .color(color)
+                        .draw_using(&PGR_FONT);
+                }
+            }
         }
         Ok(())
     }

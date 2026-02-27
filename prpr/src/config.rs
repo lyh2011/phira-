@@ -59,6 +59,8 @@ pub struct Config {
     pub enable_judge_log: bool,
     pub custom_rks_enabled: bool,
     pub custom_rks: f32,
+    pub show_judge_details: bool, // 新增：显示判定详情
+    pub show_perfect_combo: bool, // 新增：显示 Perfect Combo
 
     // for compatibility
     autoplay: Option<bool>,
@@ -103,6 +105,8 @@ impl Default for Config {
             enable_judge_log: false,
             custom_rks_enabled: false,
             custom_rks: 15.0,
+            show_judge_details: false, // 默认不显示判定详情
+            show_perfect_combo: false, // 默认不显示 Perfect Combo
 
             autoplay: None,
         }

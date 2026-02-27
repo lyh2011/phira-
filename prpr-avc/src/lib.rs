@@ -49,6 +49,10 @@ pub fn demux_audio_with_options(file: impl AsRef<str>, no_compress: bool) -> Res
         sample_rate: params.sample_rate(),
     };
     
+    // 打印原始音频信息
+    eprintln!("Original audio: sample_rate={}, channels={}, no_compress={}", 
+              params.sample_rate(), params.channels(), no_compress);
+    
     // 如果启用了不压缩选项，尽可能保留原始格式
     let (target_sample_rate, target_channels, target_channel_layout) = if no_compress {
         // 保留原始采样率和声道配置
@@ -58,8 +62,10 @@ pub fn demux_audio_with_options(file: impl AsRef<str>, no_compress: bool) -> Res
         } else {
             params.channel_layout()
         };
+        eprintln!("No compress mode: keeping original sample_rate={}", params.sample_rate());
         (params.sample_rate(), channels, channel_layout)
     } else {
+        eprintln!("Compress mode: resampling to {}", AUDIO_DECODING_SAMPLE_RATE);
         (AUDIO_DECODING_SAMPLE_RATE, 2, ffi::AV_CH_LAYOUT_STEREO)
     };
     

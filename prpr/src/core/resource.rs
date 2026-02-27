@@ -462,6 +462,9 @@ impl Resource {
         let mut audio = create_audio_manger(&config)?;
         
         // 尝试使用demux_audio_with_options来支持不压缩选项
+        let no_compress = config.has_mod(crate::config::Mods::NO_AUDIO_COMPRESS);
+        info!("Loading music with no_compress = {}", no_compress);
+        
         let music = {
             #[cfg(feature = "video")]
             {
@@ -470,20 +473,34 @@ impl Resource {
                 if let Some(ext_fs) = fs.as_any().downcast_ref::<ExternalFileSystem>() {
                     // 获取实际文件路径
                     if let Ok(file_path) = ext_fs.0.join(&info.music) {
+                        info!("Using demux_audio_with_options for: {:?}", file_path);
                         if let Ok(Some(clip)) = prpr_avc::demux_audio_with_options(
                             file_path.to_str().unwrap(),
-                            config.has_mod(crate::config::Mods::NO_AUDIO_COMPRESS)
+                            no_compress
                         ) {
+                            info!("Successfully loaded audio with demux_audio_with_options, sample_rate: {}", clip.sample_rate());
+                            
+                            // 如果启用了不压缩选项，使用音频文件的采样率创建音频管理器
+                            if no_compress && clip.sample_rate() != config.preferred_sample_rate {
+                                info!("Creating audio manager with sample_rate: {}", clip.sample_rate());
+                                let mut custom_config = config.clone();
+                                custom_config.preferred_sample_rate = clip.sample_rate();
+                                audio = create_audio_manger(&custom_config)?;
+                            }
+                            
                             clip
                         } else {
                             // 如果demux失败，回退到直接加载
+                            info!("demux_audio_with_options failed, falling back to AudioClip::new");
                             AudioClip::new(fs.load_file(&info.music).await?)?
                         }
                     } else {
+                        info!("Failed to get file path, using AudioClip::new");
                         AudioClip::new(fs.load_file(&info.music).await?)?
                     }
                 } else {
                     // 对于其他文件系统（如ZipFileSystem），使用原来的方法
+                    info!("Not ExternalFileSystem, using AudioClip::new");
                     AudioClip::new(fs.load_file(&info.music).await?)?
                 }
             }
