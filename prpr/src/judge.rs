@@ -459,12 +459,14 @@ impl Judge {
         
         self.judgements.borrow_mut().push((t, line_id, note_id, Ok(what)));
         self.inner.commit(what, diff);
-        // 记录最近的判定偏差（不包括 Miss、Drag 和 Flick）
-        if !matches!(what, Judgement::Miss) && !matches!(note_kind, NoteKind::Drag | NoteKind::Flick) {
+        // 记录最近的判定偏差（不包括 Miss、Drag、Flick 和 Hold）
+        // Hold 音符的偏差已经在按下时显示过了
+        if !matches!(what, Judgement::Miss) && !matches!(note_kind, NoteKind::Drag | NoteKind::Flick | NoteKind::Hold { .. }) {
             *self.last_judge_offset.borrow_mut() = Some(diff);
         }
-        // 记录 Good 判定的 EARLY/LATE 信息（不包括 Drag 和 Flick）
-        if matches!(what, Judgement::Good) && !matches!(note_kind, NoteKind::Drag | NoteKind::Flick) {
+        // 记录 Good 判定的 EARLY/LATE 信息（不包括 Drag、Flick 和 Hold）
+        // Hold 音符的 EARLY/LATE 已经在按下时显示过了
+        if matches!(what, Judgement::Good) && !matches!(note_kind, NoteKind::Drag | NoteKind::Flick | NoteKind::Hold { .. }) {
             *self.last_good_early_late.borrow_mut() = Some(diff < 0.0); // true=EARLY, false=LATE
             *self.last_good_time.borrow_mut() = t;
         }
