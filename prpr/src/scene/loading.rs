@@ -32,11 +32,53 @@ pub struct BasicPlayer {
     pub historic_best: u32,
 }
 
+pub enum GameSceneVariant {
+    Normal(GameScene),
+    Replay(super::ReplayGameScene),
+}
+
+impl Scene for GameSceneVariant {
+    fn enter(&mut self, tm: &mut TimeManager, target: Option<RenderTarget>) -> Result<()> {
+        match self {
+            GameSceneVariant::Normal(s) => s.enter(tm, target),
+            GameSceneVariant::Replay(s) => s.enter(tm, target),
+        }
+    }
+
+    fn touch(&mut self, tm: &mut TimeManager, touch: &Touch) -> Result<bool> {
+        match self {
+            GameSceneVariant::Normal(s) => s.touch(tm, touch),
+            GameSceneVariant::Replay(s) => s.touch(tm, touch),
+        }
+    }
+
+    fn update(&mut self, tm: &mut TimeManager) -> Result<()> {
+        match self {
+            GameSceneVariant::Normal(s) => s.update(tm),
+            GameSceneVariant::Replay(s) => s.update(tm),
+        }
+    }
+
+    fn render(&mut self, tm: &mut TimeManager, ui: &mut Ui) -> Result<()> {
+        match self {
+            GameSceneVariant::Normal(s) => s.render(tm, ui),
+            GameSceneVariant::Replay(s) => s.render(tm, ui),
+        }
+    }
+
+    fn next_scene(&mut self, tm: &mut TimeManager) -> NextScene {
+        match self {
+            GameSceneVariant::Normal(s) => s.next_scene(tm),
+            GameSceneVariant::Replay(s) => s.next_scene(tm),
+        }
+    }
+}
+
 pub struct LoadingScene {
     info: ChartInfo,
     background: SafeTexture,
     illustration: SafeTexture,
-    pub load_task: LocalTask<Result<GameScene>>,
+    pub load_task: LocalTask<Result<GameSceneVariant>>,
     next_scene: Option<NextScene>,
     finish_time: f32,
     target: Option<RenderTarget>,
@@ -86,10 +128,25 @@ impl LoadingScene {
         update_fn: Option<UpdateFn>,
 
         preloaded: Option<(SafeTexture, SafeTexture, Color)>,
+        replay_data: Option<crate::replay::ReplayData>,
+    ) -> Result<Self> {
+        Self::new_internal(mode, info, config, fs, player, upload_fn, update_fn, preloaded, replay_data).await
+    }
+
+    async fn new_internal(
+        mode: GameMode,
+        mut info: ChartInfo,
+        config: Config,
+        mut fs: Box<dyn FileSystem>,
+        player: Option<BasicPlayer>,
+        upload_fn: Option<UploadFn>,
+        update_fn: Option<UpdateFn>,
+        preloaded: Option<(SafeTexture, SafeTexture, Color)>,
+        replay_data: Option<crate::replay::ReplayData>,
     ) -> Result<Self> {
         let (background, theme_color) = match preloaded {
             Some((ill, bg, color)) => (Some((ill, bg)), color),
-            None => match Self::load(fs.as_mut(), &info.illustration).await {
+            None => match Self::load(&mut *fs, &info.illustration).await {
                 Ok((ill, bg, color)) => (Some((ill, bg)), color),
                 Err(err) => {
                     warn!("failed to load background: {err:?}");
@@ -102,7 +159,45 @@ impl LoadingScene {
         if info.tip.is_none() {
             info.tip = Some(crate::config::TIPS.choose(&mut thread_rng()).unwrap().to_owned());
         }
-        let future = Box::pin(GameScene::new(mode, info.clone(), config, fs, player, background.clone(), illustration.clone(), upload_fn, update_fn));
+        
+        let info_clone = info.clone();
+        let background_clone = background.clone();
+        let illustration_clone = illustration.clone();
+        
+        let future: std::pin::Pin<Box<dyn std::future::Future<Output = Result<GameSceneVariant>>>> = if let Some(replay) = replay_data {
+            // 创建ReplayGameScene
+            Box::pin(async move {
+                super::ReplayGameScene::new(
+                    mode,
+                    info_clone,
+                    config,
+                    fs,
+                    player,
+                    background_clone,
+                    illustration_clone,
+                    upload_fn,
+                    update_fn,
+                    replay,
+                ).await.map(GameSceneVariant::Replay)
+            })
+        } else {
+            // 创建普通GameScene
+            Box::pin(async move {
+                GameScene::new(
+                    mode,
+                    info_clone,
+                    config,
+                    fs,
+                    player,
+                    background_clone,
+                    illustration_clone,
+                    upload_fn,
+                    update_fn,
+                    None,
+                ).await.map(GameSceneVariant::Normal)
+            })
+        };
+        
         let charter = Regex::new(r"\[!:[0-9]+:([^:]*)\]").unwrap().replace_all(&info.charter, "$1").to_string();
 
         Ok(Self {

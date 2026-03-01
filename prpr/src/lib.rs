@@ -8,6 +8,7 @@ pub mod info;
 pub mod judge;
 pub mod parse;
 pub mod particle;
+pub mod replay;
 pub mod scene;
 pub mod task;
 pub mod time;
@@ -32,4 +33,16 @@ pub fn build_conf() -> macroquad::window::Conf {
         window_height: 608,
         ..Default::default()
     }
+}
+
+use std::sync::Mutex;
+
+static DATA_DIR: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn set_data_dir(dir: String) {
+    *DATA_DIR.lock().unwrap() = Some(dir);
+}
+
+pub fn get_data_dir() -> Option<String> {
+    DATA_DIR.lock().unwrap().clone()
 }

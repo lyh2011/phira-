@@ -917,7 +917,7 @@ impl SongScene {
                 #[cfg(not(feature = "video"))]
                 {
                     warn!("this build does not support unlock video.");
-                    LoadingScene::new(mode, info, config, fs, player, upload_fn, update_fn, Some(preload))
+                    LoadingScene::new(mode, info, config, fs, player, upload_fn, update_fn, Some(preload), None)
                         .await
                         .map(|it| NextScene::Overlay(Box::new(it)))
                 }
@@ -934,7 +934,7 @@ impl SongScene {
                         .map(|it| NextScene::Overlay(Box::new(it)))
                 }
             } else {
-                LoadingScene::new(mode, info, config, fs, player, upload_fn, update_fn, Some(preload))
+                LoadingScene::new(mode, info, config, fs, player, upload_fn, update_fn, Some(preload), None)
                     .await
                     .map(|it| NextScene::Overlay(Box::new(it)))
             }

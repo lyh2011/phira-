@@ -180,8 +180,11 @@ pub struct FlickTracker {
     last_time: f32,
     flicked: bool,
     stopped: bool,
-    judged_this_swipe: bool, // 记录这次滑动是否已经判定过（用于Phigros模式）
-    phigros_mode: bool, // 记录是否为Phigros模式
+    
+    // 新的距离追踪系统
+    swipe_start_point: Point, // 当前滑动的起始点
+    accumulated_distance: f32, // 当前滑动累积的距离
+    distance_threshold: f32, // 触发判定所需的滑动距离
 }
 
 impl FlickTracker {
@@ -195,14 +198,18 @@ impl FlickTracker {
             last_time: time,
             flicked: false,
             stopped: true,
-            judged_this_swipe: false,
-            phigros_mode: false, // 默认false，会在update时设置
+            
+            swipe_start_point: point,
+            accumulated_distance: 0.0,
+            distance_threshold: 0.3, // 进一步降低距离阈值：从0.2改为0.1（约10%屏幕宽度）
         }
     }
 
     pub fn push(&mut self, time: f32, position: Point) {
         let delta = position - self.last_point;
+        let distance = delta.magnitude();
         self.last_point = position;
+        
         if let Some(last_delta) = &self.last_delta {
             let dt = time - self.last_time;
             let speed = delta.dot(last_delta) / dt;
@@ -210,30 +217,57 @@ impl FlickTracker {
             // 检测方向是否改变（速度投影为负表示方向相反）
             let direction_changed = speed < 0.;
             
-            // 只在速度低于阈值时设置stopped = true
-            if speed < self.threshold {
-                self.stopped = true;
-            }
-            
-            // 速度变慢或方向改变时，重置judged_this_swipe，允许下次滑动判定
-            if self.stopped || direction_changed {
-                if self.judged_this_swipe {
-                    // 记录重置事件
+            // 速度低于阈值或方向改变时，认为滑动停止
+            if speed < self.threshold || direction_changed {
+                if !self.stopped {
                     let log_msg = format!(
-                        "TRACKER_RESET: judged_this_swipe reset | stopped={} | direction_changed={} | speed={:.2}",
-                        self.stopped, direction_changed, speed
+                        "SWIPE_STOPPED: accumulated_distance={:.3} | speed={:.2} | direction_changed={}",
+                        self.accumulated_distance, speed, direction_changed
                     );
                     write_judge_log(&log_msg);
                 }
-                self.judged_this_swipe = false;
-            }
-            
-            // 只有在stopped状态且还没flicked时，才检测新的flick
-            // 在Phigros模式下，如果已经判定过这次滑动，就不再触发新的flick
-            if self.stopped && !self.flicked && (!self.phigros_mode || !self.judged_this_swipe) {
-                let is_flick = delta.magnitude() / dt >= self.threshold * 2.;
-                if is_flick {
-                    self.flicked = true;
+                self.stopped = true;
+                // 重置滑动状态，准备下一次滑动
+                self.accumulated_distance = 0.0;
+                self.swipe_start_point = position;
+                self.flicked = false; // 重置flicked状态
+            } else {
+                // 正在滑动中
+                // 进一步降低速度要求：从 threshold * 1.0 改为 threshold * 0.7（降低30%）
+                let is_fast_enough = delta.magnitude() / dt >= self.threshold * 0.7;
+                
+                if self.stopped {
+                    // 刚开始新的滑动
+                    self.stopped = false;
+                    self.accumulated_distance = 0.0;
+                    self.swipe_start_point = position;
+                    
+                    // 如果速度够快，立即触发flick
+                    if is_fast_enough {
+                        self.flicked = true;
+                        let log_msg = format!(
+                            "FLICK_DETECTED_START: speed={:.2} | threshold={:.2}",
+                            delta.magnitude() / dt, self.threshold * 1.0
+                        );
+                        write_judge_log(&log_msg);
+                    }
+                } else {
+                    // 继续滑动中
+                    self.accumulated_distance += distance;
+                    
+                    // 如果已经滑动了固定距离，可以触发下一个flick
+                    if self.accumulated_distance >= self.distance_threshold && is_fast_enough {
+                        self.flicked = true;
+                        let log_msg = format!(
+                            "FLICK_DETECTED_CONTINUE: distance={:.3} | speed={:.2} | threshold={:.2}",
+                            self.accumulated_distance, delta.magnitude() / dt, self.threshold * 1.0
+                        );
+                        write_judge_log(&log_msg);
+                        
+                        // 重置距离计数，允许继续判定下一个flick
+                        self.accumulated_distance = 0.0;
+                        self.swipe_start_point = position;
+                    }
                 }
             }
         }
@@ -676,10 +710,7 @@ impl Judge {
         for (id, touch) in touches.iter().enumerate() {
             let click = touch.phase == TouchPhase::Started;
             let flick = matches!(touch.phase, TouchPhase::Moved | TouchPhase::Stationary) 
-                && self.trackers.get_mut(&touch.id).is_some_and(|it| {
-                    // 在Phigros模式下，如果这次滑动已经判定过，就不再触发
-                    it.flicked && (!res.config.relaxed_judge || !it.judged_this_swipe)
-                });
+                && self.trackers.get_mut(&touch.id).is_some_and(|it| it.flicked);
             if !(click || flick) {
                 continue;
             }
@@ -891,16 +922,6 @@ impl Judge {
                     if let Some(tracker) = self.trackers.get_mut(&touch.id) {
                         // 重置flicked，允许下次检测
                         tracker.flicked = false;
-                        
-                        if res.config.relaxed_judge {
-                            // Phigros模式：标记这次滑动已判定，防止重复判定
-                            tracker.judged_this_swipe = true;
-                            let log_msg = format!(
-                                "PHIGROS_MODE: judged_this_swipe=true, no more flicks until speed drops"
-                            );
-                            info!("{}", log_msg);
-                            write_judge_log(&log_msg);
-                        }
                     }
                 }
             }

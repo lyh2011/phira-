@@ -1,5 +1,6 @@
 
 play = Play
+replay = Replay
 event = Event
 respack = Respack
 

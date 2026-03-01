@@ -1,5 +1,6 @@
 
 play = 游玩
+replay = 回放
 event = 活动
 respack = 资源包
 

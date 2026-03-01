@@ -222,6 +222,9 @@ impl ChartsView {
                             if handled_by_mp {
                                 continue;
                             }
+                            // 设置 clicked_chart_path（用于回放列表）
+                            self.clicked_chart_path = chart.local_path.clone();
+                            
                             let download_path = chart.info.id.map(|it| format!("download/{it}"));
                             let scene = SongScene::new(
                                 chart.clone(),
@@ -378,7 +381,8 @@ impl ChartsView {
                                     let info = &chart.info;
                                     let mut level = info.level.clone();
                                     // 如果是文件夹，只显示 "Folder"，不显示难度
-                                    if level != "Folder" && !level.contains("Lv.") {
+                                    // 如果 difficulty 为负数，也不显示难度
+                                    if level != "Folder" && !level.contains("Lv.") && info.difficulty >= 0.0 {
                                         use std::fmt::Write;
                                         write!(&mut level, " Lv.{}", info.difficulty as i32).unwrap();
                                     }
@@ -413,8 +417,9 @@ impl ChartsView {
                                             .draw();
                                     }
                                     
-                                    // 渲染菜单按钮（只在本地铺面显示）
-                                    if chart.local_path.is_some() {
+                                    // 渲染菜单按钮（只在本地铺面显示，且不是回放项）
+                                    // 回放项的 difficulty 为负数，用于区分
+                                    if chart.local_path.is_some() && info.difficulty >= 0.0 {
                                         let menu_size = 0.08;
                                         let menu_r = Rect::new(
                                             r.right() - menu_size - 0.01,

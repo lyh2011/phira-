@@ -10,6 +10,9 @@ pub use home::HomePage;
 mod library;
 pub use library::LibraryPage;
 
+mod replay_list;
+pub use replay_list::ReplayListPage;
+
 mod message;
 pub use message::MessagePage;
 
@@ -21,6 +24,10 @@ pub use respack::{ResPackItem, ResPackPage};
 
 mod settings;
 pub use settings::SettingsPage;
+
+mod scene_wrapper;
+pub use scene_wrapper::SceneWrapperPage;
+
 use tokio::sync::Notify;
 
 use crate::{
@@ -442,15 +449,67 @@ fn set_bold_font((font, cksum): (FontArc, String)) {
 impl SharedState {
     pub async fn new(fallback: FontArc) -> Result<Self> {
         FALLBACK.with(|it| *it.borrow_mut() = Some(fallback));
+        
+        // 获取用户的字体配置
+        let config = crate::get_data().config.clone();
+        let is_custom_font = config.selected_font_index > 0;
+        
+        // 始终从bold.ttf读取字体（无论是默认字体还是自定义字体）
         let path: PathBuf = dir::bold_font_path()?.into();
-        let mut font = None;
-        if path.exists() {
-            font = std::fs::read(&path).ok().and_then(|it| load_font_with_cksum(it).ok());
-        }
-        let loaded = match font {
-            Some(it) => it,
-            None => load_font_with_cksum(load_file("bold.ttf").await?)?,
+        info!("字体文件路径: {}", path.display());
+        info!("用户字体配置: selected_font_index={}, 是否自定义字体={}", config.selected_font_index, is_custom_font);
+        
+        let loaded = if path.exists() {
+            // 检查文件大小
+            if let Ok(metadata) = std::fs::metadata(&path) {
+                info!("字体文件存在，大小: {} bytes", metadata.len());
+            }
+            
+            // 文件存在，尝试读取
+            match std::fs::read(&path) {
+                Ok(data) => {
+                    info!("成功读取字体文件，大小: {} bytes", data.len());
+                    match load_font_with_cksum(data) {
+                        Ok(font) => {
+                            info!("成功加载字体");
+                            font
+                        }
+                        Err(e) => {
+                            warn!("加载字体文件失败: {}, 使用默认字体", e);
+                            // 只有在加载失败时才从assets加载，但不覆盖原文件
+                            load_font_with_cksum(load_file("bold.ttf").await?)?
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("读取字体文件失败: {}, 使用默认字体", e);
+                    // 只有在读取失败时才从assets加载，但不覆盖原文件
+                    load_font_with_cksum(load_file("bold.ttf").await?)?
+                }
+            }
+        } else {
+            // 文件不存在
+            if is_custom_font {
+                // 用户设置了自定义字体但文件不存在，这是异常情况
+                warn!("用户设置了自定义字体但bold.ttf不存在，从assets加载默认字体");
+            } else {
+                info!("字体文件不存在，从assets加载默认字体");
+            }
+            
+            let data = load_file("bold.ttf").await?;
+            info!("从assets加载字体，大小: {} bytes", data.len());
+            
+            // 只有在用户使用默认字体时才保存到文件系统
+            if !is_custom_font {
+                match std::fs::write(&path, &data) {
+                    Ok(_) => info!("成功保存默认字体到文件系统"),
+                    Err(e) => warn!("保存默认字体失败: {}", e),
+                }
+            }
+            
+            load_font_with_cksum(data)?
         };
+        
         set_bold_font(loaded);
         Ok(Self {
             t: 0.,

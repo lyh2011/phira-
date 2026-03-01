@@ -54,6 +54,7 @@ pub struct HomePage {
     icons: Arc<Icons>,
 
     btn_play: DRectButton,
+    btn_replay: DRectButton,
     btn_event: DRectButton,
     btn_respack: DRectButton,
     btn_msg: DRectButton,
@@ -129,6 +130,7 @@ impl HomePage {
             icons: Arc::new(Icons::new().await?),
 
             btn_play: DRectButton::new().with_delta(-0.01).no_sound(),
+            btn_replay: DRectButton::new().with_elevation(0.002).no_sound(),
             btn_event: DRectButton::new().with_elevation(0.002).no_sound(),
             btn_respack: DRectButton::new().with_elevation(0.002).no_sound(),
             btn_msg: DRectButton::new().with_radius(0.008).with_delta(-0.003).with_elevation(0.002),
@@ -263,8 +265,10 @@ impl HomePage {
         let t = s.t;
 
         let pad = 0.04;
-        // play button
-        let r = Rect::new(0., -0.33, 0.83, 0.45);
+        // play button - 宽度根据回放功能是否启用动态调整
+        // 回放禁用时：与Event+Respack+Settings对齐 (0.26+0.02+0.25+0.02+0.11=0.66)
+        let play_width = if crate::scene::REPLAY_DISABLED { 0.66 } else { 0.94 };
+        let r = Rect::new(0., -0.33, play_width, 0.45);
         let mat = self.btn_play_3d.now(ui, r, t);
         let top = ui.with_gl(mat, |ui| {
             s.render_fader(ui, |ui| {
@@ -322,13 +326,22 @@ impl HomePage {
             });
         };
 
+        let event_text = tl!("event").to_string();
+        let respack_text = tl!("respack").to_string();
+        
         let mat = self.btn_other_3d.now(ui, Rect::new(0., top - 0.4, 0.83, 0.23), t);
         ui.with_gl(mat, |ui| {
-            let r = Rect::new(0., top, 0.38, 0.23);
-            text_and_icon(s, ui, r, &mut self.btn_event, tl!("event"), *self.icons.medal);
+            // 临时禁用回放功能
+            if !crate::scene::REPLAY_DISABLED {
+                let r = Rect::new(0., top, 0.26, 0.23);
+                text_and_icon(s, ui, r, &mut self.btn_replay, "回放", *self.icons.play);
+            }
 
-            let r = Rect::new(r.right() + 0.02, top, 0.29, 0.23);
-            text_and_icon(s, ui, r, &mut self.btn_respack, tl!("respack"), *self.icons.respack);
+            let r = Rect::new(if crate::scene::REPLAY_DISABLED { 0. } else { 0.28 }, top, 0.26, 0.23);
+            text_and_icon(s, ui, r, &mut self.btn_event, &event_text, *self.icons.medal);
+
+            let r = Rect::new(r.right() + 0.02, top, 0.25, 0.23);
+            text_and_icon(s, ui, r, &mut self.btn_respack, &respack_text, *self.icons.respack);
 
             let lf = r.right() + 0.02;
 
@@ -383,6 +396,11 @@ impl Page for HomePage {
             if self.btn_play.touch(touch, t) {
                 button_hit_large();
                 self.next_page = Some(NextPage::Overlay(Box::new(LibraryPage::new(Arc::clone(&self.icons), s.icons.clone())?)));
+                return Ok(true);
+            }
+            if !crate::scene::REPLAY_DISABLED && self.btn_replay.touch(touch, t) {
+                button_hit_large();
+                self.next_page = Some(NextPage::Overlay(Box::new(super::ReplayListPage::new(Arc::clone(&self.icons), s.icons.clone())?)));
                 return Ok(true);
             }
             if self.btn_event.touch(touch, t) {

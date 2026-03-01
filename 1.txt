@@ -1,0 +1,34 @@
+--------- beginning of system
+02-28 20:55:41.257 12716 12716 V Configuration: Updating configuration, locales updated from [] to [zh_CN]
+02-28 20:55:41.272 12716 12716 D ResourcesManagerExtImpl: applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:-1
+02-28 20:55:41.276 12716 12755 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+02-28 20:55:41.277 12716 12716 D ResourcesManagerExtImpl: applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+02-28 20:55:41.311 12716 12716 D ActivityThread: ComponentInfo{org.flos.phira_lyh/org.flos.phira.MainActivity} checkFinished=false 2
+02-28 20:55:41.311 12716 12716 D ResourcesManagerExtImpl: applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+02-28 20:55:41.319 12716 12716 D OplusInputMethodUtil: init sDebug to false, init sDebugIme to false, init sAlwaysOn to false
+02-28 20:55:41.319 12716 12716 D OplusInputMethodUtil: updateDebugToClass InputMethodManager.DEBUG = false
+02-28 20:55:41.319 12716 12716 D OplusInputMethodUtil: updateDebugToClass ImeFocusController.DEBUG = false
+02-28 20:55:41.319 12716 12716 D OplusInputMethodUtil: updateDebugToClass OnBackInvokedDispatcher.DEBUG = false
+02-28 20:55:41.319 12716 12716 D OplusInputMethodUtil: updateDebugToClass InsetsController.DEBUG = false
+02-28 20:55:41.319 12716 12716 D OplusInputMethodUtil: updateDebugToClass BaseInputConnection.DEBUG = false
+02-28 20:55:41.338 12716 12716 D InsetsController: Setting requestedVisibleTypes to -10 (was -9)
+02-28 20:55:41.339 12716 12716 D InsetsController: Setting requestedVisibleTypes to -12 (was -10)
+02-28 20:55:41.339 12716 12716 D InsetsController: Setting requestedVisibleTypes to -16 (was -12)
+02-28 20:55:41.341 12716 12716 D ResourcesManagerExtImpl: applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:0
+02-28 20:55:41.353 12716 12716 D VRI[MainActivity]: relayoutWindow result, sizeChanged:true, surfaceControlChanged:true, transformHintChanged:true, mSurfaceSize:Point(2800, 1272), mLastSurfaceSize:Point(0, 0), mWidth:-1, mHeight:-1, requestedWidth:2800, requestedHeight:1272, transformHint:4, installOrientation:0, displayRotation:1, isSurfaceValid:true, attr.flag:-2122250496, tmpFrames:ClientWindowFrames{frame=[0,0][2800,1272] display=[-100000,-100000][100000,100000] parentFrame=[0,0][0,0]}, relayoutAsync:false, mSyncSeqId:0
+02-28 20:55:41.353 12716 12716 W VRI[MainActivity]: updateBlastSurfaceIfNeeded, surfaceSize:Point(2800, 1272), lastSurfaceSize:Point(0, 0), format:-3, blastBufferQueue:null
+02-28 20:55:41.367 12716 12716 W VRI[MainActivity]: handleResized, msg:, frameChanged:false, configChanged:false, displayChanged:false, attachedFrameChanged:false, compatScaleChanged:false, pendingDragResizing=false
+02-28 20:55:41.390 12716 12716 W VRI[MainActivity]: handleResized abandoned!
+02-28 20:55:41.746 12716 12716 W VRI[MainActivity]: handleResized abandoned!
+--------- beginning of main
+02-28 20:55:42.395 12716 12766 D OplusScrollToTopManager: org.flos.phira_lyh/org.flos.phira.MainActivity,This com.android.internal.policy.DecorView{8c1ed68 V.E...... R....... 0,0-2800,1272 alpha=1.0 viewInfo = }[MainActivity] change focus to true
+02-28 20:55:42.456 12716 12741 D .flos.phira_lyh: PlayerBase::setVolume() from IPlayer
+02-28 20:55:42.456 12716 12741 D AAudioStream: setDuckAndMuteVolume() to 0.450000
+02-28 20:55:42.456 12716 12741 D AudioTrack: setVolume(10022) left 0.450 right 0.450 , callingPid 0
+02-28 20:55:42.646 12716 12764 I SAPP    : phira: FPS 1940
+02-28 20:55:43.643 12716 12764 I SAPP    : phira: FPS 552
+02-28 20:55:44.642 12716 12764 I SAPP    : phira: FPS 640
+02-28 20:55:45.653 12716 12764 I SAPP    : phira: FPS 619
+02-28 20:55:46.646 12716 12764 I SAPP    : phira: FPS 611
+02-28 20:55:47.639 12716 12764 I SAPP    : phira: FPS 584
+02-28 20:55:48.649 12716 12764 I SAPP    : phira: FPS 597

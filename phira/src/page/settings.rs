@@ -15,7 +15,7 @@ use macroquad::prelude::*;
 use prpr::{
     core::BOLD_FONT,
     ext::{open_url, poll_future, semi_white, LocalTask, RectExt, SafeTexture},
-    scene::{request_input, return_input, show_error, show_message, take_input},
+    scene::{request_file, request_input, return_file, return_input, show_error, show_message, take_file, take_input},
     task::Task,
     ui::{DRectButton, Scroll, Slider, Ui},
 };
@@ -270,6 +270,7 @@ struct GeneralList {
     icon_lang: SafeTexture,
 
     lang_btn: ChooseButton,
+    font_btn: ChooseButton, // 字体选择按钮
 
     #[cfg(target_os = "windows")]
     fullscreen_btn: DRectButton,
@@ -288,10 +289,16 @@ struct GeneralList {
 
     cache_size: Option<u64>,
     cache_task: Option<Task<Result<u64>>>,
+    
+    font_load_pending: bool, // 是否正在等待字体文件选择
+    font_data_pending: Option<Vec<u8>>, // 等待命名的字体数据
 }
 
 impl GeneralList {
     pub fn new(icon_lang: SafeTexture) -> Self {
+        // 构建字体选项列表
+        let font_options = Self::build_font_options();
+        
         let mut this = Self {
             icon_lang,
 
@@ -305,6 +312,10 @@ impl GeneralList {
                         .and_then(|ident| LANG_IDENTS.iter().position(|it| *it == ident))
                         .unwrap_or_default(),
                 ),
+            
+            font_btn: ChooseButton::new()
+                .with_options(font_options)
+                .with_selected(get_data().config.selected_font_index),
 
             #[cfg(target_os = "windows")]
             fullscreen_btn: DRectButton::new(),
@@ -323,13 +334,31 @@ impl GeneralList {
 
             cache_size: None,
             cache_task: None,
+            font_load_pending: false,
+            font_data_pending: None,
         };
         let _ = this.update_cache_size();
         this
     }
+    
+    fn build_font_options() -> Vec<String> {
+        let mut font_options = vec!["默认字体".to_string()];
+        font_options.extend(
+            get_data()
+                .config
+                .custom_fonts
+                .iter()
+                .map(|(name, _path)| name.clone())
+        );
+        font_options.push("+ 添加字体".to_string());
+        font_options
+    }
 
     pub fn top_touch(&mut self, touch: &Touch, t: f32) -> bool {
         if self.lang_btn.top_touch(touch, t) {
+            return true;
+        }
+        if self.font_btn.top_touch(touch, t) {
             return true;
         }
         false
@@ -362,6 +391,10 @@ impl GeneralList {
         let data = get_data_mut();
         let config = &mut data.config;
         if self.lang_btn.touch(touch, t) {
+            return Ok(Some(false));
+        }
+        
+        if self.font_btn.touch(touch, t) {
             return Ok(Some(false));
         }
 
@@ -422,12 +455,183 @@ impl GeneralList {
 
     pub fn update(&mut self, t: f32) -> Result<bool> {
         self.lang_btn.update(t);
+        self.font_btn.update(t);
+        
         let data = get_data_mut();
         if self.lang_btn.changed() {
             data.language = Some(LANG_IDENTS[self.lang_btn.selected()].to_string());
             sync_data();
             return Ok(true);
         }
+        
+        if self.font_btn.changed() {
+            let selected = self.font_btn.selected();
+            let font_count = data.config.custom_fonts.len();
+            
+            // 最后一个选项是"+ 添加字体"
+            if selected == font_count + 1 {
+                // 请求文件选择
+                request_file("_font_file");
+                self.font_load_pending = true;
+                // 不改变selected_font_index，保持当前选择
+            } else {
+                // 选择了某个字体（包括默认字体）
+                if data.config.selected_font_index != selected {
+                    let bold_font_path = dir::bold_font_path()?;
+                    
+                    if selected == 0 {
+                        // 恢复默认字体
+                        let backup_path = format!("{}_default", bold_font_path);
+                        if std::path::Path::new(&backup_path).exists() {
+                            match std::fs::copy(&backup_path, &bold_font_path) {
+                                Ok(_) => {
+                                    data.config.selected_font_index = selected;
+                                    show_message("已恢复默认字体，请重启游戏生效").warn();
+                                    return Ok(true);
+                                }
+                                Err(e) => {
+                                    show_message(format!("恢复默认字体失败: {}", e)).error();
+                                }
+                            }
+                        } else {
+                            data.config.selected_font_index = selected;
+                            show_message("请重启游戏生效").warn();
+                            return Ok(true);
+                        }
+                    } else {
+                        // 切换到自定义字体
+                        let font_index = selected - 1;
+                        if font_index < data.config.custom_fonts.len() {
+                            let (_name, path) = &data.config.custom_fonts[font_index];
+                            match std::fs::copy(path, &bold_font_path) {
+                                Ok(_) => {
+                                    data.config.selected_font_index = selected;
+                                    show_message("字体已更改，请重启游戏生效").warn();
+                                    return Ok(true);
+                                }
+                                Err(e) => {
+                                    show_message(format!("切换字体失败: {}", e)).error();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 处理文件选择结果
+        if self.font_load_pending {
+            if let Some((id, path)) = take_file() {
+                if id == "_font_file" {
+                    self.font_load_pending = false;
+                    
+                    if !path.is_empty() {
+                        // 读取字体文件并复制到游戏目录
+                        match std::fs::read(&path) {
+                            Ok(font_data) => {
+                                // 保存路径，等待用户输入名称
+                                self.font_data_pending = Some(font_data);
+                                show_message("请输入字体名称（未来不可修改）").warn();
+                                request_input("font_name", "");
+                            }
+                            Err(e) => {
+                                show_message(format!("读取字体文件失败: {}", e)).error();
+                                // 重置到当前字体
+                                let font_options = Self::build_font_options();
+                                self.font_btn = ChooseButton::new()
+                                    .with_options(font_options)
+                                    .with_selected(data.config.selected_font_index);
+                                self.font_btn.update(t);
+                            }
+                        }
+                    } else {
+                        // 用户取消了选择，重置到当前字体
+                        let font_options = Self::build_font_options();
+                        self.font_btn = ChooseButton::new()
+                            .with_options(font_options)
+                            .with_selected(data.config.selected_font_index);
+                        self.font_btn.update(t);
+                    }
+                } else {
+                    return_file(id, path);
+                }
+            }
+        }
+        
+        // 处理字体名称输入
+        if let Some(font_data) = self.font_data_pending.take() {
+            if let Some((id, name)) = take_input() {
+                if id == "font_name" {
+                    if !name.trim().is_empty() {
+                        // 保存字体文件到自定义字体列表
+                        let custom_font_path = format!("{}/fonts/custom_font_{}.ttf", dir::root()?, data.config.custom_fonts.len());
+                        std::fs::create_dir_all(format!("{}/fonts", dir::root()?)).ok();
+                        
+                        match std::fs::write(&custom_font_path, &font_data) {
+                            Ok(_) => {
+                                // 添加到自定义字体列表
+                                data.config.custom_fonts.push((name.trim().to_string(), custom_font_path.clone()));
+                                data.config.selected_font_index = data.config.custom_fonts.len();
+                                
+                                // 直接替换bold.ttf
+                                let bold_font_path = dir::bold_font_path()?;
+                                
+                                // 备份原字体（如果还没有备份）
+                                let backup_path = format!("{}_default", bold_font_path);
+                                if !std::path::Path::new(&backup_path).exists() {
+                                    if std::path::Path::new(&bold_font_path).exists() {
+                                        std::fs::copy(&bold_font_path, &backup_path).ok();
+                                    }
+                                }
+                                
+                                // 复制新字体到bold.ttf
+                                match std::fs::copy(&custom_font_path, &bold_font_path) {
+                                    Ok(_) => {
+                                        // 重建字体选项列表和按钮
+                                        let font_options = Self::build_font_options();
+                                        self.font_btn = ChooseButton::new()
+                                            .with_options(font_options)
+                                            .with_selected(data.config.selected_font_index);
+                                        self.font_btn.update(t);
+                                        
+                                        show_message(format!("已添加字体: {}，请重启游戏生效", name.trim())).ok();
+                                        return Ok(true);
+                                    }
+                                    Err(e) => {
+                                        show_message(format!("应用字体失败: {}", e)).error();
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                show_message(format!("保存字体文件失败: {}", e)).error();
+                                // 重置到当前字体
+                                let font_options = Self::build_font_options();
+                                self.font_btn = ChooseButton::new()
+                                    .with_options(font_options)
+                                    .with_selected(data.config.selected_font_index);
+                                self.font_btn.update(t);
+                            }
+                        }
+                    } else {
+                        show_message("字体名称不能为空").error();
+                        // 重置到当前字体
+                        let font_options = Self::build_font_options();
+                        self.font_btn = ChooseButton::new()
+                            .with_options(font_options)
+                            .with_selected(data.config.selected_font_index);
+                        self.font_btn.update(t);
+                    }
+                } else {
+                    // 不是字体名称输入，放回去并保存数据
+                    self.font_data_pending = Some(font_data);
+                    return_input(id, name);
+                }
+            } else {
+                // 还没有输入，保存数据等待下次
+                self.font_data_pending = Some(font_data);
+            }
+        }
+        
         if let Some((id, text)) = take_input() {
             if id == "mp_addr" {
                 if let Err(err) = text.to_socket_addrs() {
@@ -490,6 +694,14 @@ impl GeneralList {
             ui.fill_rect(r, (*self.icon_lang, r));
             self.lang_btn.render(ui, rr, t);
         }
+        
+        item! {
+            let debug_info = format!("调试: 索引={}, 字体数={}", 
+                data.config.selected_font_index, 
+                data.config.custom_fonts.len());
+            render_title(ui, "自定义字体", Some(Cow::Owned(debug_info)));
+            self.font_btn.render(ui, rr, t);
+        }
 
         #[cfg(target_os = "windows")]
         item! {
@@ -551,6 +763,7 @@ impl GeneralList {
             }
         }
         self.lang_btn.render_top(ui, t, 1.);
+        self.font_btn.render_top(ui, t, 1.);
         (w, h)
     }
 }
@@ -691,6 +904,7 @@ struct ChartList {
     enable_judge_log_btn: DRectButton,
     show_judge_details_btn: DRectButton,
     show_perfect_combo_btn: DRectButton, // 新增：显示 Perfect Combo 按钮
+    auto_record_btn: DRectButton, // 自动录制回放
     speed_slider: Slider,
     size_slider: Slider,
 }
@@ -708,6 +922,7 @@ impl ChartList {
             enable_judge_log_btn: DRectButton::new(),
             show_judge_details_btn: DRectButton::new(),
             show_perfect_combo_btn: DRectButton::new(), // 新增
+            auto_record_btn: DRectButton::new(), // 自动录制
             speed_slider: Slider::new(0.5..2., 0.05),
             size_slider: Slider::new(0.8..1.2, 0.005),
         }
@@ -766,6 +981,10 @@ impl ChartList {
             config.show_perfect_combo ^= true;
             return Ok(Some(true));
         }
+        if self.auto_record_btn.touch(touch, t) {
+            config.auto_record ^= true;
+            return Ok(Some(true));
+        }
         if let wt @ Some(_) = self.speed_slider.touch(touch, t, &mut config.speed) {
             return Ok(wt);
         }
@@ -812,6 +1031,10 @@ impl ChartList {
         item! {
             render_title(ui, tl!("item-show-perfect-combo"), Some(tl!("item-show-perfect-combo-sub")));
             render_switch(ui, rr, t, &mut self.show_perfect_combo_btn, config.show_perfect_combo);
+        }
+        item! {
+            render_title(ui, "自动录制", Some("自动录制游戏回放".into()));
+            render_switch(ui, rr, t, &mut self.auto_record_btn, config.auto_record);
         }
         item! {
             render_title(ui, tl!("item-dc-pause"), None);

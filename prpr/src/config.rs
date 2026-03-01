@@ -61,6 +61,9 @@ pub struct Config {
     pub custom_rks: f32,
     pub show_judge_details: bool, // 新增：显示判定详情
     pub show_perfect_combo: bool, // 新增：显示 Perfect Combo
+    pub auto_record: bool, // 自动录制回放
+    pub custom_fonts: Vec<(String, String)>, // 自定义字体列表：(显示名称, 文件路径)
+    pub selected_font_index: usize, // 当前选中的字体索引 (0=默认字体)
 
     // for compatibility
     autoplay: Option<bool>,
@@ -107,6 +110,9 @@ impl Default for Config {
             custom_rks: 15.0,
             show_judge_details: false, // 默认不显示判定详情
             show_perfect_combo: false, // 默认不显示 Perfect Combo
+            auto_record: false, // 默认不自动录制
+            custom_fonts: Vec::new(), // 默认无自定义字体
+            selected_font_index: 0, // 默认使用内置字体
 
             autoplay: None,
         }

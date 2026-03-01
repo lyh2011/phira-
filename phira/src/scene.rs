@@ -14,6 +14,10 @@ pub use main::{MainScene, BGM_VOLUME_UPDATED, MP_PANEL};
 
 mod song;
 pub use song::{Downloading, SongScene, RECORD_ID};
+
+mod replay;
+pub use replay::{ReplayScene, REPLAY_DISABLED};
+
 #[cfg(feature = "video")]
 mod unlock;
 #[cfg(feature = "video")]

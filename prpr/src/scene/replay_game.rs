@@ -96,14 +96,8 @@ extern "C" {
     fn on_game_start();
 }
 
-#[derive(PartialEq, Eq)]
-pub enum GameMode {
-    Normal,
-    TweakOffset,
-    Exercise,
-    NoRetry,
-    View,
-}
+// 使用game.rs中的GameMode
+use super::game::GameMode;
 
 #[derive(Clone)]
 enum State {
@@ -113,7 +107,7 @@ enum State {
     Ending,
 }
 
-pub struct GameScene {
+pub struct ReplayGameScene {
     should_exit: bool,
     next_scene: Option<NextScene>,
 
@@ -146,9 +140,6 @@ pub struct GameScene {
     update_fn: Option<UpdateFn>,
 
     pub touch_points: Vec<(f32, f32)>,
-    
-    // Replay support
-    replay_data: Option<crate::replay::ReplayData>,
 }
 
 macro_rules! reset {
@@ -166,7 +157,7 @@ macro_rules! reset {
     }};
 }
 
-impl GameScene {
+impl ReplayGameScene {
     pub const BEFORE_TIME: f32 = 0.7;
     pub const FADEOUT_TIME: f32 = WAIT_TIME + AFTER_TIME + 0.3;
 
@@ -229,7 +220,7 @@ impl GameScene {
         illustration: SafeTexture,
         upload_fn: Option<UploadFn>,
         update_fn: Option<UpdateFn>,
-        replay_data: Option<crate::replay::ReplayData>,
+        replay_data: crate::replay::ReplayData,
     ) -> Result<Self> {
         match mode {
             GameMode::TweakOffset => {
@@ -273,11 +264,8 @@ impl GameScene {
         let exercise_range = (chart.offset + info_offset + res.config.offset)..res.track_length;
 
         let mut judge = Judge::new(&chart);
-        
-        // 如果有replay数据，设置到Judge中
-        if let Some(ref replay) = replay_data {
-            judge.set_replay_data(replay.clone());
-        }
+        // 设置replay数据
+        judge.set_replay_data(replay_data);
         
         // 同步判定日志配置到全局变量
         crate::judge::set_judge_log_enabled(res.config.enable_judge_log);
@@ -316,8 +304,6 @@ impl GameScene {
             update_fn,
 
             touch_points: Vec::new(),
-            
-            replay_data,
         })
     }
 
@@ -931,7 +917,7 @@ impl GameScene {
     }
 }
 
-impl Scene for GameScene {
+impl Scene for ReplayGameScene {
     fn enter(&mut self, tm: &mut TimeManager, target: Option<RenderTarget>) -> Result<()> {
         #[cfg(target_arch = "wasm32")]
         on_game_start();
@@ -1033,7 +1019,7 @@ impl Scene for GameScene {
             State::Ending => {
                 let t = time - self.res.track_length - WAIT_TIME;
                 if t >= AFTER_TIME + 0.3 {
-                    let mut record_data = None;
+                    let mut record_data: Option<Vec<u8>> = None;
                     // TODO strengthen the protection
                     #[cfg(feature = "closed")]
                     if let Some(upload_fn) = &self.upload_fn {
@@ -1056,23 +1042,11 @@ impl Scene for GameScene {
                         })
                     };
                     self.next_scene = match self.mode {
-                        GameMode::Normal | GameMode::NoRetry | GameMode::View => Some(NextScene::Overlay(Box::new(EndingScene::new(
-                            self.res.background.clone(),
-                            self.res.illustration.clone(),
-                            self.res.player.clone(),
-                            self.res.icons.clone(),
-                            self.res.icon_retry.clone(),
-                            self.res.icon_proceed.clone(),
-                            self.res.info.clone(),
-                            self.judge.result(),
-                            &self.res.config,
-                            self.res.res_pack.ending.clone(),
-                            self.upload_fn.as_ref().map(Arc::clone),
-                            self.player.as_ref().map(|it| it.rks),
-                            self.player.as_ref().map_or(0, |it| it.historic_best),
-                            record_data,
-                            record,
-                        )?))),
+                        GameMode::Normal | GameMode::NoRetry | GameMode::View => {
+                            // 回放模式结束时直接退出
+                            self.should_exit = true;
+                            None::<NextScene>
+                        },
                         GameMode::TweakOffset => Some(NextScene::PopWithResult(Box::new(None::<f32>))),
                         GameMode::Exercise => None,
                     };
@@ -1191,7 +1165,11 @@ impl Scene for GameScene {
     fn render(&mut self, tm: &mut TimeManager, ui: &mut Ui) -> Result<()> {
         let res = &mut self.res;
         let asp = ui.viewport.2 as f32 / ui.viewport.3 as f32;
+        tracing::info!("[REPLAY_RENDER] asp={:.3}, res.aspect_ratio={:.3}, camera.zoom.y={:.3}", 
+            asp, res.aspect_ratio, res.camera.zoom.y);
         if res.update_size(ui.viewport) || self.mode == GameMode::View {
+            tracing::info!("[REPLAY_RENDER] after update_size: res.aspect_ratio={:.3}, camera.zoom.y={:.3}", 
+                res.aspect_ratio, res.camera.zoom.y);
             set_camera(&res.camera);
         }
 
@@ -1223,6 +1201,7 @@ impl Scene for GameScene {
         self.gl.quad_gl.viewport(chart_target_vp);
 
         let h = 1. / res.aspect_ratio;
+        tracing::info!("[REPLAY_RENDER] drawing dim rect: h={:.3}, aspect_ratio={:.3}", h, res.aspect_ratio);
         draw_rectangle(-1., -h, 2., h * 2., Color::new(0., 0., 0., res.alpha * res.info.background_dim));
 
         self.chart.render(ui, res);
